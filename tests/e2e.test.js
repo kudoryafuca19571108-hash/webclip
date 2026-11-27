@@ -155,7 +155,7 @@ async function pasteInto(page, sel, data) {
   ok('2v ブログ形式：本文の最初と最後を含む', blogPay.html.includes('BLOG_BODY_1') && blogPay.html.includes('BLOG_BODY_2'), blogPay.html.slice(0, 200));
   ok('2w ブログ形式：サイドバー・メニューを含まない', !blogPay.html.includes('SIDE_TEXT') && !blogPay.html.includes('プロフィール'), blogPay.html);
   ok('2x ブログ形式：相対パスの画像を絶対 URL に', blogPay.html.includes(`src="${SITE}/photo1.jpg"`));
-  ok('2y ブログ形式：タイトルは document.title', blogPay.title === '週末の現場見学 - しんぶログ', blogPay.title);
+  ok('2y ブログ形式：タイトルは document.title', blogPay.title === '週末の現場見学 - サンプルブログ', blogPay.title);
   await blog.close();
 
   // ---- 3. アプリへ貼り付けて保存 ----
