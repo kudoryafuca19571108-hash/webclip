@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="referrer" content="no-referrer">
+<title>WebClip 記事保存</title>
+<style>
+:root{
+  --bg:#f3f5f8; --panel:#ffffff; --line:#d9dee6; --line2:#eceff4; --text:#1d2430; --sub:#5d6b7e;
+  --accent:#2563eb; --accent2:#dbe7ff; --ok:#15803d; --okbg:#e3f5e8; --ng:#c62828; --ngbg:#fde7e7; --warn:#b45309; --warnbg:#fff3dc;
+  --fs:16px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;font-size:14px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 11px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:#b6c0ce;background:#f8fafc}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover{background:#1d4fd0}
+button.danger{color:var(--ng)}
+button.sm{padding:3px 8px;font-size:12px}
+input[type=text],input[type=search],input[type=url],select,textarea{border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:#fff;min-width:0;width:100%}
+textarea{resize:vertical;line-height:1.5}
+input:focus,select:focus,textarea:focus{outline:2px solid #9db8f5;outline-offset:-1px}
+a{color:var(--accent)}
+
+.appbar{height:48px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1f2937;color:#e5e7eb}
+.appbar .brand b{font-size:16px;letter-spacing:.5px;color:#fff}
+.appbar .brand span{margin-left:6px;font-size:11px;color:#9ca3af}
+.appbar .actions{margin-left:auto;display:flex;gap:6px;overflow-x:auto;min-width:0}
+.appbar .lblS{display:none}
+.appbar button{background:#374151;border-color:#4b5563;color:#e5e7eb}
+.appbar button:hover{background:#4b5563}
+.appbar button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.appbar .back{display:none}
+
+#layout{display:grid;grid-template-columns:380px minmax(0,1fr);height:calc(100% - 48px)}
+.pane{background:var(--panel);overflow:auto;min-height:0;-webkit-overflow-scrolling:touch}
+#listPane{border-right:1px solid var(--line)}
+#readerPane{background:var(--bg)}
+
+.listTools{position:sticky;top:0;z-index:2;background:var(--panel);padding:10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.listTools .row{display:flex;gap:6px}
+.count{font-size:12px;color:var(--sub)}
+#list{list-style:none;margin:0;padding:0}
+#list li{position:relative;padding:10px 42px 10px 12px;border-bottom:1px solid var(--line2);cursor:pointer}
+#list li:hover{background:#f8fafc}
+#list li.on{background:var(--accent2)}
+#list .t{font-weight:600;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+#list .m{font-size:12px;color:var(--sub);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#list .tg{margin-top:3px}
+#list .ext{position:absolute;right:8px;top:10px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:6px;text-decoration:none;background:#fff;font-size:14px}
+.kind{display:inline-block;font-size:11px;padding:0 6px;border-radius:9px;background:#eef2f7;color:#475569;margin-right:4px;vertical-align:1px}
+.kind.link{background:var(--warnbg);color:var(--warn)}
+.tag{display:inline-block;font-size:11px;padding:0 7px;border-radius:9px;background:#e8f0fe;color:#1e4fb8;margin:0 4px 2px 0;cursor:pointer}
+.emptyMsg{padding:24px 16px;color:var(--sub);line-height:1.7;font-size:13px}
+
+.rd{max-width:800px;margin:0 auto;padding:18px 18px 80px;background:var(--panel);min-height:100%}
+.rd .kindRow{font-size:12px;color:var(--sub)}
+.rd h1.ttl{font-size:1.45em;line-height:1.4;margin:6px 0 6px;word-break:break-word}
+.rd .metaRow{font-size:12px;color:var(--sub)}
+.rd .linkRow{margin:8px 0;padding:8px 10px;background:#f6f8fb;border:1px solid var(--line2);border-radius:8px;font-size:13px;word-break:break-all}
+.rd .linkRow .lbtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.rd .actRow{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.rd .memo{white-space:pre-wrap;background:var(--warnbg);border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px;line-height:1.6}
+.rd .fsRow{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub);margin:10px 0 0;justify-content:flex-end}
+.rd hr.sep{border:none;border-top:1px solid var(--line);margin:10px 0 16px}
+.rd .body{font-size:var(--fs);line-height:1.85;overflow-wrap:anywhere}
+.body img{max-width:100%;height:auto}
+.body pre{overflow:auto;background:#f6f8fa;padding:10px;border-radius:6px;font-size:.85em;line-height:1.5}
+.body code{background:#f1f3f6;padding:0 3px;border-radius:3px;font-size:.9em}
+.body pre code{background:none;padding:0}
+.body table{border-collapse:collapse;display:block;overflow-x:auto;max-width:100%;font-size:.9em}
+.body td,.body th{border:1px solid var(--line);padding:4px 8px;vertical-align:top}
+.body blockquote{border-left:3px solid #cbd5e1;margin:1em 0;padding:0 1em;color:#475569}
+.body figure{margin:1em 0}
+.body h1{font-size:1.4em;line-height:1.4}.body h2{font-size:1.25em;line-height:1.45}.body h3{font-size:1.1em}.body h4,.body h5,.body h6{font-size:1em}
+.body figcaption{font-size:.85em;color:var(--sub)}
+.linkOnly{padding:14px;border:1px dashed var(--line);border-radius:8px;color:var(--sub);line-height:1.7}
+.welcome{max-width:640px;margin:0 auto;padding:30px 20px;line-height:1.8;color:#334155}
+.welcome h2{font-size:18px;margin:0 0 10px}
+.welcome ol{padding-left:1.3em}
+
+.modalWrap{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;justify-content:center;z-index:50;padding:12px;overflow:auto}
+.modalWrap[hidden]{display:none}
+.modal{background:#fff;border-radius:10px;width:100%;max-width:760px;padding:14px 16px;box-shadow:0 10px 40px rgba(0,0,0,.25);margin:auto 0}
+.modal h2{font-size:16px;margin:0 0 8px}
+.modal h3{font-size:13px;margin:14px 0 6px;padding-bottom:3px;border-bottom:1px solid var(--line2);color:#334155}
+.modalBtns{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap}
+#dlgWrap{z-index:60}
+#dlgWrap .modal{max-width:440px;margin-top:20vh}
+.note{font-size:12px;color:var(--sub);line-height:1.6;margin:4px 0}
+.fld{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+.fld>span{font-size:12px;color:var(--sub)}
+.fldRow{display:flex;gap:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.warnBox{background:var(--warnbg);color:var(--warn);border-radius:6px;padding:6px 10px;font-size:12px;margin:6px 0}
+.infoBox{background:#f6f8fb;border:1px solid var(--line2);border-radius:6px;padding:6px 10px;font-size:12px;color:#475569;margin:6px 0}
+.pvBody{border:1px solid var(--line);border-radius:8px;padding:10px 12px;max-height:40vh;overflow:auto;font-size:14px;line-height:1.75;overflow-wrap:anywhere}
+#pasteBox{min-height:72px;font-size:13px}
+.bmLink{display:inline-block;padding:8px 16px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;cursor:grab}
+.steps{margin:4px 0 0;padding-left:1.3em;line-height:1.7;font-size:13px}
+.kv{font-size:13px;line-height:1.8}
+.kv b{display:inline-block;min-width:8em;font-weight:normal;color:var(--sub)}
+
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;z-index:80;opacity:0;pointer-events:none;transition:opacity .2s;max-width:calc(100% - 32px);text-align:center}
+#toast.show{opacity:1}
+
+@media (max-width:899px){
+  #layout{grid-template-columns:1fr}
+  #listPane{border-right:none}
+  #readerPane{display:none}
+  body.reading #listPane{display:none}
+  body.reading #readerPane{display:block}
+  body.reading .appbar .back{display:inline-block}
+  body.reading .appbar .brand{display:none}
+  .rd{padding:14px 14px 80px}
+  .grid2{grid-template-columns:1fr}
+}
+@media (max-width:599px){
+  .appbar .brand span{display:none}
+  .appbar .lblL{display:none}
+  .appbar .lblS{display:inline}
+}
+</style>
+</head>
+<body>
+<header class="appbar">
+  <button id="btnBack" class="back">‹ 一覧</button>
+  <div class="brand"><b>WebClip</b><span id="ver"></span></div>
+  <div class="actions">
+    <button id="btnImport" class="primary">＋ 取込</button>
+    <button id="btnBm" title="ブックマークレット"><span class="lblL">ブックマークレット</span><span class="lblS">BM登録</span></button>
+    <button id="btnBackup">バックアップ</button>
+  </div>
+</header>
+<div id="layout">
+  <section id="listPane" class="pane">
+    <div class="listTools">
+      <input id="q" type="search" placeholder="検索（タイトル・本文・URL・メモ／#タグ）">
+      <div class="row">
+        <select id="fSite"><option value="">すべてのサイト</option></select>
+        <select id="fSort">
+          <option value="new">保存日（新しい順）</option>
+          <option value="old">保存日（古い順）</option>
+          <option value="title">タイトル順</option>
+          <option value="site">サイト順</option>
+        </select>
+      </div>
+      <div class="count" id="count"></div>
+    </div>
+    <ul id="list"></ul>
+    <div id="empty" class="emptyMsg" hidden></div>
+  </section>
+  <section id="readerPane" class="pane"><div id="reader"></div></section>
+</div>
+<div id="modalWrap" class="modalWrap" hidden><div class="modal" id="modal"></div></div>
+<div id="dlgWrap" class="modalWrap" hidden><div class="modal" id="dlg"></div></div>
+<div id="toast"></div>
+<input type="file" id="fileIn" accept=".json,application/json" hidden>
+
+<script>
+'use strict';
+const APP_VERSION = '1.0.0';
+/* 保存データ（IndexedDB "webclip"）
+   clips  : { id, kind, url, canonical, title, site, author, published, excerpt, image,
+              text, chars, images, tags[], memo, createdAt, updatedAt }
+   bodies : { id, html }   … 本文（サニタイズ済み HTML）
+   バックアップ JSON : { app:'WebClip', format:1, version, exportedAt, clips:[{...clip, html}] } */
+const DB_NAME = 'webclip', DB_VER = 1, BACKUP_FORMAT = 1;
+const LS_FS = 'webclip.fontSize', LS_BACKUP = 'webclip.lastBackup';
+const KIND_LABEL = { article:'本文', page:'ページ全体', selection:'選択範囲', paste:'貼り付け', link:'リンクのみ' };
+
+/*BM-START*/
+/* ブックマークレット本体。表示中のページの中で実行される。
+   外部ファイルを読まない・<style> を挿入しない（CSP 対策）・行コメントを書かない（1行化のため）。 */
+function WC_BM(APP, VER) {
+  var D = document, W = window, B = D.body, old = D.getElementById('__webclip');
+  if (old) { old.remove(); return; }
+  if (!B) { return; }
+  var i, e, s, hid = [], ims = [], all = B.getElementsByTagName('*');
+  for (i = 0; i < all.length; i++) {
+    e = all[i];
+    if (e.tagName === 'NOSCRIPT') { continue; }
+    try { s = W.getComputedStyle(e); } catch (x) { continue; }
+    if (s && (s.display === 'none' || s.visibility === 'hidden')) { e.setAttribute('data-wch', '1'); hid.push(e); }
+  }
+  for (i = 0; i < D.images.length; i++) {
+    e = D.images[i]; s = e.currentSrc || '';
+    if (s && s.indexOf('data:') !== 0) { e.setAttribute('data-wcs', s); ims.push(e); }
+  }
+  function abs(u) { if (!u) { return ''; } try { return new URL(u, D.baseURI).href; } catch (x) { return ''; } }
+  function mt(q) { var m = D.querySelector(q); return m ? (m.getAttribute('content') || '').trim() : ''; }
+  function tl(el) { return ((el.innerText || el.textContent) || '').replace(/\s+/g, '').length; }
+  function tc(el) { return (el.textContent || '').replace(/\s+/g, '').length; }
+  function pick() {
+    var c = B.querySelectorAll('p,pre,blockquote,td,div,section,article'), M = new Map(), bx = null, bv = 0, j, k, n, t, v, cm;
+    function add(x, y) { if (!x || x === D.documentElement) { return; } M.set(x, (M.get(x) || 0) + y); }
+    for (j = 0; j < c.length; j++) {
+      n = c[j];
+      if (n.closest('[data-wch],nav,footer,aside')) { continue; }
+      if (/^(P|PRE|BLOCKQUOTE)$/.test(n.tagName)) {
+        t = tc(n); if (t < 20) { continue; }
+        cm = ((n.textContent || '').match(/[、，,]/g) || []).length;
+        v = 1 + Math.min(t / 80, 4) + Math.min(cm * 0.25, 3);
+        add(n.parentElement, v);
+        if (n.parentElement) { add(n.parentElement.parentElement, v / 2); if (n.parentElement.parentElement) { add(n.parentElement.parentElement.parentElement, v / 3); } }
+      } else {
+        t = 0;
+        for (k = n.firstChild; k; k = k.nextSibling) { if (k.nodeType === 3) { t += k.nodeValue.replace(/\s+/g, '').length; } }
+        if (t < 40) { continue; }
+        v = 1 + Math.min(t / 80, 4);
+        add(n, v); add(n.parentElement, v / 2);
+      }
+    }
+    var r1 = /article|content|entry|post|body|main|honbun|text|story|blog/i, r2 = /comment|side|footer|nav|menu|related|rank|widget|share|sns|recommend|banner/i;
+    M.forEach(function (y, x) {
+      var id = (typeof x.className === 'string' ? x.className : '') + ' ' + (x.id || ''), L = tc(x) || 1, al = 0, as = x.getElementsByTagName('a'), q;
+      for (q = 0; q < as.length; q++) { al += tc(as[q]); }
+      y = y * (1 - Math.min(al / L, 1));
+      if (/^(ARTICLE|MAIN)$/.test(x.tagName) || x.getAttribute('itemprop') === 'articleBody') { y *= 1.3; }
+      if (r1.test(id)) { y *= 1.15; }
+      if (r2.test(id)) { y *= 0.5; }
+      if (y > bv) { bv = y; bx = x; }
+    });
+    if (!bx) { bx = D.querySelector('[itemprop=articleBody],article,main,[role=main]') || B; }
+    var L0 = tl(bx), p = bx.parentElement;
+    while (p && p !== B && p !== D.documentElement && tl(p) <= L0 * 1.3) { bx = p; p = p.parentElement; }
+    var ar = bx.closest('article');
+    if (ar && ar !== bx && tl(ar) <= L0 * 2) { bx = ar; }
+    return bx;
+  }
+  function cl(root, junk) {
+    var c = root.cloneNode(true), q, j, x, u, L;
+    q = c.querySelectorAll('noscript');
+    for (j = 0; j < q.length; j++) {
+      x = q[j];
+      if (/<img/i.test(x.textContent || '')) {
+        try {
+          var bd = new DOMParser().parseFromString(x.textContent, 'text/html').body, sp = D.createElement('span');
+          while (bd.firstChild) { sp.appendChild(D.importNode(bd.firstChild, true)); bd.removeChild(bd.firstChild); }
+          x.replaceWith(sp);
+        } catch (y) {}
+      }
+    }
+    q = c.querySelectorAll('[data-wch]');
+    for (j = 0; j < q.length; j++) { q[j].remove(); }
+    q = c.querySelectorAll('iframe');
+    for (j = 0; j < q.length; j++) {
+      x = q[j]; u = abs(x.getAttribute('src') || '');
+      if (/^https?:/.test(u)) { var pa = D.createElement('p'), a = D.createElement('a'); a.href = u; a.textContent = '[埋め込み] ' + u; pa.appendChild(a); x.replaceWith(pa); } else { x.remove(); }
+    }
+    q = c.querySelectorAll('form');
+    for (j = 0; j < q.length; j++) { x = q[j]; while (x.firstChild) { x.parentNode.insertBefore(x.firstChild, x); } x.remove(); }
+    q = c.querySelectorAll('script,style,noscript,template,object,embed,input,button,select,textarea,svg,canvas,dialog,link,meta,source' + (junk ? ',nav,aside,footer' : ''));
+    for (j = 0; j < q.length; j++) { q[j].remove(); }
+    if (junk) {
+      L = tc(c) || 1;
+      var rj = /(^|[\s_-])(share|sns|social|related|recommend|ranking|comments?|ads?|advert\w*|promo\w*|banner|breadcrumbs?|pagination|pager|subscribe|newsletter|popup|modal|cookie\w*|widget|sidebar|follow)([\s_-]|$)/i;
+      q = c.querySelectorAll('*');
+      for (j = 0; j < q.length; j++) {
+        x = q[j];
+        if (rj.test((typeof x.className === 'string' ? x.className : '') + ' ' + (x.id || '')) && tc(x) < L * 0.3) { x.remove(); }
+      }
+    }
+    q = c.querySelectorAll('img');
+    for (j = 0; j < q.length; j++) {
+      x = q[j];
+      var sr = x.getAttribute('src') || '', ss = (x.getAttribute('data-srcset') || x.getAttribute('srcset') || '').trim().split(/[\s,]+/)[0];
+      if (/^data:/.test(sr)) { sr = ''; }
+      u = x.getAttribute('data-wcs') || x.getAttribute('data-src') || x.getAttribute('data-original') || x.getAttribute('data-lazy-src') || sr || ss || '';
+      if (!u || (/^data:/.test(u) && u.length < 400) || x.getAttribute('width') === '1' || x.getAttribute('height') === '1') { x.remove(); continue; }
+      x.setAttribute('src', /^data:/.test(u) ? u : abs(u));
+      x.removeAttribute('srcset'); x.removeAttribute('sizes'); x.removeAttribute('data-wcs');
+    }
+    q = c.querySelectorAll('a[href]');
+    for (j = 0; j < q.length; j++) {
+      x = q[j]; u = x.getAttribute('href') || '';
+      if (/^\s*javascript:/i.test(u)) { x.removeAttribute('href'); } else { x.setAttribute('href', abs(u)); }
+    }
+    return c;
+  }
+  var se = null, sl = W.getSelection();
+  if (sl && sl.rangeCount && !sl.isCollapsed && String(sl).replace(/\s+/g, '').length > 0) {
+    var dv = D.createElement('div');
+    for (i = 0; i < sl.rangeCount; i++) { dv.appendChild(sl.getRangeAt(i).cloneContents()); }
+    se = cl(dv, false);
+  }
+  var root = pick(), art = cl(root, true), pg = cl(B, false);
+  for (i = 0; i < hid.length; i++) { hid[i].removeAttribute('data-wch'); }
+  for (i = 0; i < ims.length; i++) { ims[i].removeAttribute('data-wcs'); }
+  var cn = D.querySelector('link[rel=canonical]'), tm = D.querySelector('time[datetime]');
+  var info = {
+    url: location.href,
+    canonical: cn ? abs(cn.getAttribute('href') || '') : '',
+    site: mt('meta[property="og:site_name"]') || location.hostname,
+    author: mt('meta[name=author]') || mt('meta[property="article:author"]'),
+    published: mt('meta[property="article:published_time"]') || mt('meta[itemprop=datePublished]') || (tm ? tm.getAttribute('datetime') : ''),
+    excerpt: mt('meta[name=description]') || mt('meta[property="og:description"]'),
+    image: abs(mt('meta[property="og:image"]')),
+    lang: D.documentElement.lang || ''
+  };
+  var md = se ? 'selection' : 'article';
+  function el() { return md === 'selection' ? se : md === 'page' ? pg : art; }
+  function ttl(x) { var h = x && x.querySelector('h1'); return mt('meta[property="og:title"]') || (h ? h.textContent.replace(/\s+/g, ' ').trim() : '') || D.title || ''; }
+  function pay() {
+    var x = el(), o = { wc: 1, v: VER, mode: md, title: ttl(x), html: x.innerHTML, clippedAt: new Date().toISOString() }, k;
+    for (k in info) { o[k] = info[k]; }
+    return o;
+  }
+  function st(n, o) { for (var k in o) { n.style.setProperty(k, o[k], 'important'); } return n; }
+  function mk(t, o, tx) { var n = D.createElement(t); if (o) { st(n, o); } if (tx != null) { n.textContent = tx; } return n; }
+  function bt(tx, pr) {
+    return mk('button', { font: 'inherit', 'font-size': '14px', padding: '7px 12px', margin: '0', 'border-radius': '8px', border: '1px solid ' + (pr ? '#2563eb' : '#d9dee6'), background: pr ? '#2563eb' : '#fff', color: pr ? '#fff' : '#1d2430', cursor: 'pointer', 'line-height': '1.3' }, tx);
+  }
+  var H = mk('div', { all: 'initial', position: 'fixed', 'z-index': '2147483647', left: '0', right: '0', bottom: '0', display: 'block' });
+  H.id = '__webclip';
+  var R = H.attachShadow ? H.attachShadow({ mode: 'open' }) : H;
+  var P = mk('div', { margin: '0 auto 10px', width: 'calc(100% - 16px)', 'max-width': '560px', 'box-sizing': 'border-box', background: '#fff', color: '#1d2430', border: '1px solid #d9dee6', 'border-radius': '12px', 'box-shadow': '0 8px 30px rgba(0,0,0,.25)', padding: '12px', 'font-family': 'system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif', 'font-size': '14px', 'line-height': '1.5', 'text-align': 'left' });
+  var r1 = mk('div', { display: 'flex', 'align-items': 'center', gap: '6px', 'margin-bottom': '6px' }), mb = {}, ms = [['article', '本文'], ['page', '全体']];
+  if (se) { ms.unshift(['selection', '選択']); }
+  r1.appendChild(mk('b', { 'font-size': '15px', 'margin-right': '4px' }, 'WebClip'));
+  ms.forEach(function (m) { var b = st(bt(m[1]), { padding: '3px 10px', 'font-size': '13px' }); b.onclick = function () { md = m[0]; up(); }; mb[m[0]] = b; r1.appendChild(b); });
+  var xb = st(bt('×'), { 'margin-left': 'auto', padding: '3px 10px' });
+  r1.appendChild(xb);
+  var tt = mk('div', { 'font-weight': '700', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' });
+  var inf = mk('div', { color: '#5d6b7e', 'font-size': '12px' });
+  var pv = mk('div', { color: '#475569', 'font-size': '12px', 'max-height': '4.5em', overflow: 'hidden', margin: '4px 0 8px', 'word-break': 'break-all' });
+  var r2 = mk('div', { display: 'flex', 'flex-wrap': 'wrap', gap: '6px', 'align-items': 'center' }), cb = bt('コピー', 1), sb = APP ? bt('アプリへ送る') : null;
+  var msg = mk('div', { 'font-size': '12px', color: '#15803d', 'margin-top': '6px', 'min-height': '1em' });
+  r2.appendChild(cb); if (sb) { r2.appendChild(sb); }
+  var ol = root.style.getPropertyValue('outline'), op = root.style.getPropertyPriority('outline');
+  function hl(on) { if (root === B) { return; } if (on) { root.style.setProperty('outline', '3px solid rgba(37,99,235,.7)', 'important'); } else { root.style.setProperty('outline', ol, op); } }
+  function say(t, err) { msg.textContent = t; st(msg, { color: err ? '#c62828' : '#15803d' }); }
+  function up() {
+    var x = el(), t = (x.textContent || '').replace(/\s+/g, ' ').trim(), k;
+    tt.textContent = ttl(x) || '(無題)';
+    inf.textContent = '約' + t.replace(/\s/g, '').length.toLocaleString() + '字・画像' + x.querySelectorAll('img').length + '枚';
+    pv.textContent = t.slice(0, 160);
+    for (k in mb) { st(mb[k], { background: k === md ? '#dbe7ff' : '#fff', 'border-color': k === md ? '#9db8f5' : '#d9dee6' }); }
+    hl(md === 'article'); say('');
+  }
+  function kd(ev) { if (ev.key === 'Escape') { cls(); } }
+  function cls() { hl(false); H.remove(); D.removeEventListener('keydown', kd, true); }
+  function cp(t) {
+    function fb() {
+      var a = mk('textarea', { position: 'fixed', top: '0', left: '0', opacity: '0', width: '1px', height: '1px' }), ok = false;
+      a.value = t; a.setAttribute('readonly', ''); D.documentElement.appendChild(a); a.focus(); a.select();
+      try { a.setSelectionRange(0, t.length); } catch (x) {}
+      try { ok = D.execCommand('copy'); } catch (x) {}
+      a.remove(); return ok;
+    }
+    if (navigator.clipboard && W.isSecureContext) { return navigator.clipboard.writeText(t).then(function () { return true; }, function () { return fb(); }); }
+    return Promise.resolve(fb());
+  }
+  xb.onclick = cls;
+  cb.onclick = function () { cp('WEBCLIP:v1\n' + JSON.stringify(pay())).then(function (ok) { say(ok ? 'コピーしました。WebClip の「取込」に貼り付けてください' : 'コピーできませんでした', !ok); }); };
+  if (sb) {
+    sb.onclick = function () {
+      var t = pay(), id = String(Date.now()) + Math.random().toString(36).slice(2), w = W.open(APP + '#receive', 'webclip_app'), n = 0, dn = false, org;
+      if (!w) { say('新しいタブを開けませんでした。「コピー」して貼り付けてください', 1); return; }
+      try { org = new URL(APP).origin; } catch (x) { org = '*'; }
+      say('送信中…');
+      function om(ev) { if (ev.data && ev.data.webclipAck === id) { dn = true; W.removeEventListener('message', om); say('アプリへ送りました'); } }
+      W.addEventListener('message', om);
+      var iv = setInterval(function () {
+        if (dn || ++n > 60) { clearInterval(iv); if (!dn) { W.removeEventListener('message', om); say('送信できませんでした。「コピー」して貼り付けてください', 1); } return; }
+        try { w.postMessage({ webclip: 1, id: id, data: t }, org); } catch (x) {}
+      }, 500);
+    };
+  }
+  P.appendChild(r1); P.appendChild(tt); P.appendChild(inf); P.appendChild(pv); P.appendChild(r2); P.appendChild(msg);
+  R.appendChild(P); D.documentElement.appendChild(H);
+  D.addEventListener('keydown', kd, true);
+  up();
+}
+/*BM-END*/
+
+/*CORE-START*/
+/* ---------- HTML のサニタイズ（許可リスト方式） ---------- */
+const KEEP_ATTR = { a:['href','title'], img:['src','alt','title','width','height'], ol:['start'], th:['colspan','rowspan'], td:['colspan','rowspan'], time:['datetime'], abbr:['title'] };
+const SIMPLE_TAGS = new Set(('p br hr h1 h2 h3 h4 h5 h6 ul ol li blockquote pre code em strong b i u s del ins sub sup small mark span div ' +
+  'figure figcaption table thead tbody tfoot tr th td caption dl dt dd section article header time abbr q cite kbd ruby rt rp').split(' '));
+const DROP_TAGS = new Set(('script style noscript template iframe frame frameset object embed applet svg math canvas form input button select ' +
+  'option optgroup textarea head title meta link base audio video source track dialog map area').split(' '));
+const BLOCK_TAGS = new Set(('p div section article header footer main aside nav figure figcaption h1 h2 h3 h4 h5 h6 ul ol li blockquote pre hr ' +
+  'table thead tbody tfoot tr th td caption dl dt dd').split(' '));
+
+function safeUrl(u, isImg, base) {
+  u = String(u || '').trim();
+  if (!u) return '';
+  if (isImg && /^data:image\/(png|jpe?g|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(u)) return u.replace(/\s+/g, '');
+  let x;
+  try { x = base ? new URL(u, base) : new URL(u); } catch (e) { return ''; }
+  if (x.protocol === 'http:' || x.protocol === 'https:') return x.href;
+  if (!isImg && x.protocol === 'mailto:') return x.href;
+  return '';
+}
+
+function sanitizeHtml(html, base) {
+  const src = new DOMParser().parseFromString('<!DOCTYPE html><html><body>' + (html || '') + '</body></html>', 'text/html');
+  const out = document.implementation.createHTMLDocument('');
+  const root = out.createElement('div');
+  (function walk(from, to) {
+    for (const n of Array.from(from.childNodes)) {
+      if (n.nodeType === 3) { to.appendChild(out.createTextNode(n.nodeValue)); continue; }
+      if (n.nodeType !== 1) continue;
+      const tag = n.tagName.toLowerCase();
+      if (DROP_TAGS.has(tag)) continue;
+      if (SIMPLE_TAGS.has(tag) || KEEP_ATTR[tag]) {
+        const el = out.createElement(tag);
+        for (const a of (KEEP_ATTR[tag] || [])) {
+          let v = n.getAttribute(a);
+          if (v == null) continue;
+          if (a === 'href') { v = safeUrl(v, false, base); if (!v) continue; }
+          else if (a === 'src') { v = safeUrl(v, true, base); if (!v) continue; }
+          else if (/^(width|height|colspan|rowspan|start)$/.test(a)) { if (!/^\d{1,4}$/.test(v.trim())) continue; v = v.trim(); }
+          el.setAttribute(a, v.slice(0, 2000));
+        }
+        if (tag === 'img' && !el.getAttribute('src')) continue;
+        walk(n, el);
+        to.appendChild(el);
+      } else {
+        walk(n, to);   // 未知の要素は中身だけ残す
+      }
+    }
+  })(src.body, root);
+  // 空の要素を取り除く
+  const EMPTY_OK = new Set(['br','hr','img','td','th','tr','tbody','thead','tfoot','table']);
+  for (const el of Array.from(root.querySelectorAll('*')).reverse()) {
+    const tag = el.tagName.toLowerCase();
+    if (EMPTY_OK.has(tag)) continue;
+    if (!el.textContent.trim() && !el.querySelector('img,br,hr,table')) el.remove();
+  }
+  return root.innerHTML.trim();
+}
+
+function parseBody(html) { return new DOMParser().parseFromString('<!DOCTYPE html><html><body>' + (html || '') + '</body></html>', 'text/html').body; }
+
+function htmlToText(html) {
+  const b = parseBody(html);
+  b.querySelectorAll('br').forEach(x => x.replaceWith('\n'));
+  b.querySelectorAll(Array.from(BLOCK_TAGS).join(',')).forEach(x => { x.prepend('\n'); x.append('\n'); });
+  return b.textContent.replace(/[ \t\u00a0\u3000]+/g, ' ').replace(/ *\n[\s]*/g, '\n').trim();
+}
+
+/* ---------- HTML → Markdown ---------- */
+function mdEsc(t) { return t.replace(/([\\`*_\[\]])/g, '\\$1').replace(/<(?=[a-zA-Z\/!])/g, '\\<'); }
+function mdUrl(u) { u = String(u || ''); return /[\s()<>]/.test(u) ? '<' + u.replace(/</g, '%3C').replace(/>/g, '%3E') + '>' : u; }
+const BR = '\u0001';
+
+function htmlToMarkdown(html) {
+  return mdBlocks(parseBody(html)).join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function isBlockEl(n) { return n.nodeType === 1 && BLOCK_TAGS.has(n.tagName.toLowerCase()); }
+function finishInline(s) {
+  s = s.replace(/[ \t\r\n\u00a0]+/g, ' ');
+  s = s.replace(/ *\u0001 */g, BR).replace(/^[ \u0001]+|[ \u0001]+$/g, '');
+  if (/^(#{1,6} |[-+*] |\d+[.)] |>)/.test(s)) s = '\\' + s;
+  return s.replace(/\u0001/g, '  \n');
+}
+function mdInlineKids(n) { return Array.from(n.childNodes).map(mdInline).join(''); }
+function wrapMark(s, m) {
+  const t = s.trim();
+  if (!t || t === BR) return s.replace(/\S/g, '');
+  const lead = s.match(/^\s*/)[0] ? ' ' : '', tail = s.match(/\s*$/)[0] ? ' ' : '';
+  return lead + m + t + m + tail;
+}
+function mdInline(n) {
+  if (n.nodeType === 3) return mdEsc(n.nodeValue);
+  if (n.nodeType !== 1) return '';
+  const tag = n.tagName.toLowerCase();
+  switch (tag) {
+    case 'br': return BR;
+    case 'strong': case 'b': return wrapMark(mdInlineKids(n), '**');
+    case 'em': case 'i': case 'cite': return wrapMark(mdInlineKids(n), '*');
+    case 'del': case 's': return wrapMark(mdInlineKids(n), '~~');
+    case 'code': case 'kbd': {
+      const t = n.textContent.replace(/\s+/g, ' ');
+      if (!t.trim()) return t;
+      const f = t.includes('`') ? '``' : '`';
+      return f + (f === '``' ? ' ' + t + ' ' : t) + f;
+    }
+    case 'a': {
+      const href = n.getAttribute('href'), t = mdInlineKids(n).trim();
+      if (!t) return '';
+      return href ? '[' + t + '](' + mdUrl(href) + ')' : t;
+    }
+    case 'img': {
+      const src = n.getAttribute('src');
+      if (!src) return '';
+      return '![' + mdEsc((n.getAttribute('alt') || '').replace(/\s+/g, ' ').trim()) + '](' + mdUrl(src) + ')';
+    }
+    case 'rt': case 'rp': return '';
+    default:
+      if (BLOCK_TAGS.has(tag)) return ' ' + mdInlineKids(n) + ' ';
+      return mdInlineKids(n);
+  }
+}
+function mdBlocks(parent) {
+  const out = [];
+  let buf = '';
+  const flush = () => { const t = finishInline(buf); if (t) out.push(t); buf = ''; };
+  for (const n of Array.from(parent.childNodes)) {
+    if (isBlockEl(n)) { flush(); out.push(...mdBlock(n)); }
+    else buf += mdInline(n);
+  }
+  flush();
+  return out;
+}
+function mdBlock(n) {
+  const tag = n.tagName.toLowerCase();
+  if (/^h[1-6]$/.test(tag)) {
+    const t = finishInline(mdInlineKids(n)).replace(/  \n/g, ' ');
+    return t ? ['#'.repeat(+tag[1]) + ' ' + t.replace(/^\\/, '')] : [];
+  }
+  switch (tag) {
+    case 'hr': return ['---'];
+    case 'pre': {
+      const t = n.textContent.replace(/\n+$/, '');
+      if (!t.trim()) return [];
+      const f = t.includes('```') ? '~~~~' : '```';
+      return [f + '\n' + t + '\n' + f];
+    }
+    case 'blockquote': {
+      const inner = mdBlocks(n).join('\n\n');
+      return inner ? [inner.split('\n').map(l => l ? '> ' + l : '>').join('\n')] : [];
+    }
+    case 'ul': case 'ol': { const t = mdList(n); return t ? [t] : []; }
+    case 'table': { const t = mdTable(n); return t ? [t] : mdBlocks(n); }
+    case 'figcaption': { const t = finishInline(mdInlineKids(n)); return t ? ['*' + t.replace(/  \n/g, ' ') + '*'] : []; }
+    case 'dt': { const t = finishInline(mdInlineKids(n)); return t ? ['**' + t + '**'] : []; }
+    default: return mdBlocks(n);
+  }
+}
+function mdList(n) {
+  const ol = n.tagName.toLowerCase() === 'ol';
+  let i = parseInt(n.getAttribute('start') || '1', 10); if (!isFinite(i)) i = 1;
+  const items = [];
+  for (const li of Array.from(n.children)) {
+    if (li.tagName.toLowerCase() !== 'li') { const t = mdBlocks(li).join('\n'); if (t) items.push(t); continue; }
+    const marker = ol ? (i++) + '. ' : '- ';
+    const body = mdBlocks(li).join('\n');
+    if (!body) continue;
+    const pad = ' '.repeat(marker.length);
+    items.push(body.split('\n').map((l, k) => k === 0 ? marker + l : (l ? pad + l : '')).join('\n'));
+  }
+  return items.join('\n');
+}
+function mdTable(n) {
+  const rows = Array.from(n.querySelectorAll('tr')).filter(r => r.closest('table') === n);
+  if (!rows.length) return '';
+  const data = rows.map(r => Array.from(r.children).filter(c => /^(td|th)$/i.test(c.tagName))
+    .map(c => finishInline(mdInlineKids(c)).replace(/  \n/g, '<br>').replace(/\|/g, '\\|')));
+  const cols = Math.max(...data.map(r => r.length));
+  if (!cols) return '';
+  const line = r => '| ' + Array.from({ length: cols }, (_, k) => r[k] || '').join(' | ') + ' |';
+  return [line(data[0]), '|' + ' --- |'.repeat(cols), ...data.slice(1).map(line)].join('\n');
+}
+
+/* ---------- URL ---------- */
+function normUrl(u) {
+  try {
+    const x = new URL(String(u || '').trim());
+    x.hash = '';
+    for (const k of Array.from(x.searchParams.keys())) if (/^(utm_|fbclid$|gclid$|yclid$|mc_|_ga$)/i.test(k)) x.searchParams.delete(k);
+    let s = x.href.replace(/^http:/, 'https:');
+    if (s.endsWith('/') && x.pathname !== '/') s = s.slice(0, -1);
+    return s;
+  } catch (e) { return String(u || '').trim(); }
+}
+function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
+function isHttpUrl(u) { return /^https?:\/\/\S+$/i.test(String(u || '').trim()); }
+
+/* ---------- 取込データ → 下書き ---------- */
+function buildDraft(src) {
+  const kind = KIND_LABEL[src.kind] ? src.kind : 'paste';
+  const url = String(src.url || '').trim();
+  const html = kind === 'link' ? '' : sanitizeHtml(src.html || '', isHttpUrl(url) ? url : undefined);
+  const text = html ? htmlToText(html) : '';
+  const b = parseBody(html);
+  let title = String(src.title || '').replace(/\s+/g, ' ').trim();
+  if (!title) {
+    const h = b.querySelector('h1,h2,h3');
+    title = (h ? h.textContent.replace(/\s+/g, ' ').trim() : '') || text.split('\n')[0].slice(0, 80) || url || '無題';
+  }
+  return {
+    kind, url, canonical: String(src.canonical || '').trim(),
+    title: title.slice(0, 300),
+    site: String(src.site || '').trim() || hostOf(url),
+    author: String(src.author || '').trim().slice(0, 200),
+    published: String(src.published || '').trim().slice(0, 60),
+    excerpt: String(src.excerpt || '').trim().slice(0, 500),
+    image: safeUrl(src.image || '', true) || '',
+    html, text, chars: text.replace(/\s/g, '').length, images: b.querySelectorAll('img').length,
+    tags: Array.isArray(src.tags) ? src.tags : [], memo: String(src.memo || ''),
+  };
+}
+function draftFromPayload(p) {
+  return buildDraft({ kind: ({ article:'article', page:'page', selection:'selection' })[p.mode] || 'article',
+    url: p.url, canonical: p.canonical, title: p.title, site: p.site, author: p.author, published: p.published,
+    excerpt: p.excerpt, image: p.image, html: p.html });
+}
+/* 貼り付け内容を解釈する。戻り値 { type:'payload'|'html'|'text'|'url'|'error', draft?, url? } */
+function interpretPaste(html, text) {
+  text = String(text || '');
+  const m = text.match(/^\s*WEBCLIP:v1\s*([\s\S]*)$/);
+  if (m) {
+    try { const p = JSON.parse(m[1]); if (p && p.wc === 1) return { type: 'payload', draft: draftFromPayload(p) }; } catch (e) {}
+    return { type: 'error', message: 'ブックマークレットのデータを読み取れませんでした（途中で切れている可能性があります）' };
+  }
+  const t = text.trim();
+  if (isHttpUrl(t) && !/<(p|div|article|h\d|li|table|img)\b/i.test(html || '')) return { type: 'url', url: t };
+  if (html && html.trim()) {
+    const d = buildDraft({ kind: 'paste', html });
+    if (d.html) return { type: 'html', draft: d };
+  }
+  if (!t) return { type: 'error', message: '貼り付ける内容がありません' };
+  const h = t.split(/\n{2,}/).map(p => '<p>' + escHtml(p).replace(/\n/g, '<br>') + '</p>').join('');
+  return { type: 'text', draft: buildDraft({ kind: 'paste', html: h }) };
+}
+
+/* ---------- 書き出し ---------- */
+function clipToMarkdown(c, html) {
+  const q = s => JSON.stringify(String(s || ''));
+  const fm = ['---', 'title: ' + q(c.title)];
+  if (c.url) fm.push('source: ' + q(c.url));
+  if (c.site) fm.push('site: ' + q(c.site));
+  if (c.author) fm.push('author: ' + q(c.author));
+  if (c.published) fm.push('published: ' + q(c.published));
+  fm.push('clipped: ' + q(c.createdAt));
+  if (c.tags && c.tags.length) fm.push('tags: [' + c.tags.map(q).join(', ') + ']');
+  fm.push('---');
+  let md = fm.join('\n') + '\n\n# ' + mdEsc(c.title || '無題') + '\n\n';
+  if (c.url) md += '元ページ: [' + mdEsc(c.site || hostOf(c.url) || c.url) + '](' + mdUrl(c.url) + ')\n\n';
+  if (c.memo) md += c.memo.split('\n').map(l => '> ' + l).join('\n') + '\n\n';
+  let body = html ? htmlToMarkdown(html) : (c.excerpt ? mdEsc(c.excerpt) : '');
+  const first = body.match(/^# (.*)\n*/);
+  if (first && first[1].replace(/\\/g, '').replace(/\s+/g, '') === String(c.title || '').replace(/\s+/g, '')) body = body.slice(first[0].length);
+  return md + body + '\n';
+}
+function clipToHtml(c, html) {
+  const meta = [c.site || hostOf(c.url), c.author, c.published ? '公開 ' + fmtDate(c.published, false) : '', '保存 ' + fmtDate(c.createdAt)].filter(Boolean).map(escHtml).join(' · ');
+  return '<!DOCTYPE html>\n<html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<meta name="referrer" content="no-referrer"><title>' + escHtml(c.title) + '</title><style>' +
+    'body{max-width:800px;margin:0 auto;padding:20px;font-family:system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",Meiryo,sans-serif;line-height:1.85;color:#1d2430;overflow-wrap:anywhere}' +
+    'img{max-width:100%;height:auto}pre{overflow:auto;background:#f6f8fa;padding:10px}table{border-collapse:collapse}td,th{border:1px solid #d9dee6;padding:4px 8px}' +
+    'blockquote{border-left:3px solid #cbd5e1;margin:1em 0;padding:0 1em;color:#475569}.meta{color:#5d6b7e;font-size:13px}.memo{background:#fff3dc;padding:8px 10px;border-radius:6px;white-space:pre-wrap}' +
+    '</style></head><body>\n<h1>' + escHtml(c.title) + '</h1>\n<p class="meta">' + meta + '<br>' +
+    (c.url ? '<a href="' + escHtml(c.url) + '">' + escHtml(c.url) + '</a>' : '') + '</p>\n' +
+    (c.memo ? '<div class="memo">' + escHtml(c.memo) + '</div>\n' : '') + '<hr>\n' +
+    (html ? sanitizeHtml(html, isHttpUrl(c.url) ? c.url : undefined) : '<p>' + escHtml(c.excerpt || '（リンクのみ）') + '</p>') + '\n</body></html>\n';
+}
+function linksMarkdown(list) {
+  const groups = new Map();
+  for (const c of list) { const k = siteKey(c); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); }
+  let md = '# WebClip リンク一覧（' + fmtDate(new Date().toISOString()) + ' 書き出し・' + list.length + '件）\n';
+  for (const k of Array.from(groups.keys()).sort()) {
+    md += '\n## ' + k + '\n\n';
+    for (const c of groups.get(k)) {
+      const tags = (c.tags || []).map(t => '#' + t.replace(/\s+/g, '_')).join(' ');
+      md += '- ' + (c.url ? '[' + mdEsc(c.title || c.url) + '](' + mdUrl(c.url) + ')' : mdEsc(c.title)) + ' — ' + fmtDate(c.createdAt, false) + (tags ? ' ' + tags : '') + '\n';
+    }
+  }
+  return md;
+}
+function siteKey(c) { return hostOf(c.url) || '(URLなし)'; }
+
+/* ---------- 汎用 ---------- */
+function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch])); }
+function fmtDate(iso, withTime = true) {
+  const d = new Date(iso);
+  if (!iso || isNaN(d)) return String(iso || '');
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + (withTime ? ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) : '');
+}
+function parseTags(s) { return Array.from(new Set(String(s || '').split(/[,\s、，]+/).map(t => t.replace(/^#/, '').trim()).filter(Boolean))); }
+function uid() { return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+/*CORE-END*/
+
+/* ---------- 保存領域（IndexedDB、使えない場合はメモリ） ---------- */
+let db = null, memMode = false;
+const mem = { clips: new Map(), bodies: new Map() };
+function idbOpen() {
+  return new Promise((res, rej) => {
+    let r;
+    try { r = indexedDB.open(DB_NAME, DB_VER); } catch (e) { rej(e); return; }
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      if (!d.objectStoreNames.contains('clips')) d.createObjectStore('clips', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('bodies')) d.createObjectStore('bodies', { keyPath: 'id' });
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.onblocked = () => rej(new Error('blocked'));
+  });
+}
+function reqP(r) { return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+function txDone(t) { return new Promise((res, rej) => { t.oncomplete = () => res(); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('abort')); }); }
+function dbGetAll() { return memMode ? Promise.resolve(Array.from(mem.clips.values())) : reqP(db.transaction('clips').objectStore('clips').getAll()); }
+async function dbGetBody(id) {
+  if (memMode) return mem.bodies.get(id) || '';
+  const r = await reqP(db.transaction('bodies').objectStore('bodies').get(id));
+  return r ? r.html : '';
+}
+function dbPutMany(items) {   // items: [{ meta, html }]
+  if (memMode) { for (const it of items) { mem.clips.set(it.meta.id, it.meta); mem.bodies.set(it.meta.id, it.html || ''); } return Promise.resolve(); }
+  const t = db.transaction(['clips', 'bodies'], 'readwrite');
+  for (const it of items) { t.objectStore('clips').put(it.meta); t.objectStore('bodies').put({ id: it.meta.id, html: it.html || '' }); }
+  return txDone(t);
+}
+function dbPutMeta(meta) {
+  if (memMode) { mem.clips.set(meta.id, meta); return Promise.resolve(); }
+  const t = db.transaction('clips', 'readwrite'); t.objectStore('clips').put(meta); return txDone(t);
+}
+function dbDelete(id) {
+  if (memMode) { mem.clips.delete(id); mem.bodies.delete(id); return Promise.resolve(); }
+  const t = db.transaction(['clips', 'bodies'], 'readwrite');
+  t.objectStore('clips').delete(id); t.objectStore('bodies').delete(id);
+  return txDone(t);
+}
+
+/* ---------- 状態 ---------- */
+let clips = [], currentId = null, pending = null, pushedReader = false, persistAsked = false;
+const hayCache = new WeakMap();
+const $ = s => document.querySelector(s);
+const META_KEYS = ['id','kind','url','canonical','title','site','author','published','excerpt','image','text','chars','images','tags','memo','createdAt','updatedAt'];
+function pickMeta(o) { const m = {}; for (const k of META_KEYS) m[k] = o[k]; m.tags = Array.isArray(m.tags) ? m.tags : []; m.memo = m.memo || ''; return m; }
+
+function toast(msg, ms = 2600) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms);
+}
+async function copyText(t) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(t); return true; } } catch (e) {}
+  const ta = document.createElement('textarea');
+  ta.value = t; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+  document.body.appendChild(ta); ta.select(); try { ta.setSelectionRange(0, t.length); } catch (e) {}
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+  ta.remove(); return ok;
+}
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+function safeName(s) { return String(s || 'clip').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80) || 'clip'; }
+function isNarrow() { return window.matchMedia('(max-width: 899px)').matches; }
+function findDup(url, canonical, exceptId) {
+  const keys = [url, canonical].filter(isHttpUrl).map(normUrl);
+  if (!keys.length) return null;
+  return clips.find(c => c.id !== exceptId && [c.url, c.canonical].filter(isHttpUrl).map(normUrl).some(k => keys.includes(k))) || null;
+}
+
+/* ---------- モーダル ---------- */
+function openModal(html) { $('#modal').innerHTML = html; $('#modalWrap').hidden = false; $('#modalWrap').scrollTop = 0; return $('#modal'); }
+function closeModal() { $('#modalWrap').hidden = true; $('#modal').innerHTML = ''; pending = null; }
+function choose(message, buttons) {
+  return new Promise(res => {
+    const d = $('#dlg');
+    d.innerHTML = '<p style="white-space:pre-wrap;line-height:1.6;margin:0 0 6px">' + escHtml(message) + '</p><div class="modalBtns">' +
+      buttons.map((b, i) => '<button data-i="' + i + '" class="' + (b.cls || '') + '">' + escHtml(b.label) + '</button>').join('') + '</div>';
+    $('#dlgWrap').hidden = false;
+    d.querySelectorAll('button').forEach(b => b.onclick = () => { $('#dlgWrap').hidden = true; res(buttons[+b.dataset.i].v); });
+  });
+}
+
+/* ---------- 一覧 ---------- */
+function hay(c) {
+  let h = hayCache.get(c);
+  if (!h) { h = [c.title, c.url, c.site, c.memo, (c.tags || []).join(' '), c.author, c.text].join('\n').toLowerCase(); hayCache.set(c, h); }
+  return h;
+}
+function filteredClips() {
+  const toks = $('#q').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const site = $('#fSite').value;
+  const a = clips.filter(c => {
+    if (site && siteKey(c) !== site) return false;
+    for (const t of toks) {
+      if (t.startsWith('#') && t.length > 1) { if (!(c.tags || []).some(g => g.toLowerCase() === t.slice(1))) return false; }
+      else if (!hay(c).includes(t)) return false;
+    }
+    return true;
+  });
+  const s = $('#fSort').value;
+  const cmpTitle = (x, y) => String(x.title).localeCompare(String(y.title), 'ja');
+  if (s === 'old') a.sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt)));
+  else if (s === 'title') a.sort(cmpTitle);
+  else if (s === 'site') a.sort((x, y) => siteKey(x).localeCompare(siteKey(y)) || String(y.createdAt).localeCompare(String(x.createdAt)));
+  else a.sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt)));
+  return a;
+}
+function renderSites() {
+  const sel = $('#fSite'), cur = sel.value, cnt = new Map();
+  for (const c of clips) { const k = siteKey(c); cnt.set(k, (cnt.get(k) || 0) + 1); }
+  const keys = Array.from(cnt.keys()).sort();
+  sel.innerHTML = '<option value="">すべてのサイト（' + clips.length + '）</option>' +
+    keys.map(k => '<option value="' + escHtml(k) + '">' + escHtml(k) + '（' + cnt.get(k) + '）</option>').join('');
+  sel.value = keys.includes(cur) ? cur : '';
+}
+function renderList() {
+  const a = filteredClips();
+  $('#count').textContent = a.length === clips.length ? clips.length + ' 件' : a.length + ' / ' + clips.length + ' 件';
+  $('#list').innerHTML = a.map(c => {
+    const meta = [escHtml(c.site || siteKey(c)), fmtDate(c.createdAt, false), c.kind === 'link' ? '' : '約' + (c.chars || 0).toLocaleString() + '字'].filter(Boolean).join(' · ');
+    return '<li data-id="' + c.id + '" class="' + (c.id === currentId ? 'on' : '') + '">' +
+      '<div class="t">' + (c.kind === 'link' ? '<span class="kind link">リンク</span>' : '') + escHtml(c.title) + '</div>' +
+      '<div class="m">' + meta + '</div>' +
+      ((c.tags || []).length ? '<div class="tg">' + c.tags.map(t => '<span class="tag" data-tag="' + escHtml(t) + '">#' + escHtml(t) + '</span>').join('') + '</div>' : '') +
+      (isHttpUrl(c.url) ? '<a class="ext" href="' + escHtml(c.url) + '" target="_blank" rel="noopener noreferrer" title="元ページを開く">↗</a>' : '') +
+      '</li>';
+  }).join('');
+  const em = $('#empty');
+  if (!clips.length) { em.hidden = false; em.innerHTML = 'まだ保存した記事はありません。<br>「＋ 取込」から貼り付けるか、「ブックマークレット」を登録して使ってください。'; }
+  else if (!a.length) { em.hidden = false; em.textContent = '条件に合う記事はありません。'; }
+  else em.hidden = true;
+}
+
+/* ---------- 閲覧 ---------- */
+function renderWelcome() {
+  $('#reader').innerHTML = '<div class="welcome"><h2>WebClip の使い方</h2><ol>' +
+    '<li>「ブックマークレット」から WebClip のブックマークレットを登録します。</li>' +
+    '<li>保存したい記事のページでブックマークレットを実行し、「コピー」を押します（「アプリへ送る」が出ていれば、それでも取り込めます）。</li>' +
+    '<li>WebClip の「＋ 取込」を開いて貼り付け、内容を確認して「保存」します。</li></ol>' +
+    '<p class="note">ブックマークレットを使わず、記事ページを全選択してコピーし、そのまま貼り付けても取り込めます。URL だけを貼り付けると「リンクのみ」で保存できます。</p>' +
+    '<p class="note">データはこのブラウザの中に保存されます。端末の移行や万一に備えて、ときどき「バックアップ」から JSON を書き出してください。</p></div>';
+}
+function decorateBody(el) {
+  el.querySelectorAll('a[href]').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+  el.querySelectorAll('img').forEach(i => { i.loading = 'lazy'; i.decoding = 'async'; i.referrerPolicy = 'no-referrer'; });
+}
+async function openClip(id, push = true) {
+  const c = clips.find(x => x.id === id);
+  if (!c) return;
+  currentId = id;
+  document.querySelectorAll('#list li').forEach(li => li.classList.toggle('on', li.dataset.id === id));
+  let html = '';
+  try { html = await dbGetBody(id); } catch (e) { toast('本文を読み込めませんでした'); }
+  if (currentId !== id) return;
+  const hasUrl = isHttpUrl(c.url);
+  const meta = [c.site || siteKey(c), c.author, c.published ? '公開 ' + fmtDate(c.published, false) : ''].filter(Boolean).map(escHtml).join(' · ');
+  $('#reader').innerHTML = '<article class="rd">' +
+    '<div class="kindRow"><span class="kind' + (c.kind === 'link' ? ' link' : '') + '">' + escHtml(KIND_LABEL[c.kind] || c.kind) + '</span>保存 ' + fmtDate(c.createdAt) +
+      (c.updatedAt && c.updatedAt !== c.createdAt ? '（更新 ' + fmtDate(c.updatedAt) + '）' : '') + '</div>' +
+    '<h1 class="ttl">' + escHtml(c.title) + '</h1>' +
+    (meta ? '<div class="metaRow">' + meta + '</div>' : '') +
+    '<div class="linkRow">' + (hasUrl ? '<a class="url" href="' + escHtml(c.url) + '" target="_blank" rel="noopener noreferrer">' + escHtml(c.url) + '</a>' : '<span class="note">URL が登録されていません（「編集」で追加できます）</span>') +
+      '<div class="lbtns">' + (hasUrl ? '<button class="sm" data-act="open">元ページを開く</button><button class="sm" data-act="copyurl">リンクをコピー</button><button class="sm" data-act="copymdlink">Markdownリンクをコピー</button>' : '') + '</div></div>' +
+    ((c.tags || []).length ? '<div>' + c.tags.map(t => '<span class="tag" data-tag="' + escHtml(t) + '">#' + escHtml(t) + '</span>').join('') + '</div>' : '') +
+    (c.memo ? '<div class="memo">' + escHtml(c.memo) + '</div>' : '') +
+    '<div class="actRow"><button data-act="edit">編集</button><button data-act="copymd">Markdownをコピー</button><button data-act="md">.md 保存</button><button data-act="html">.html 保存</button><button data-act="del" class="danger">削除</button></div>' +
+    '<div class="fsRow">文字サイズ <button class="sm" data-act="fs-">A−</button><button class="sm" data-act="fs+">A＋</button></div>' +
+    '<hr class="sep"><div class="body" id="rdBody"></div></article>';
+  const body = $('#rdBody');
+  if (c.kind === 'link' || !html) {
+    body.innerHTML = '<div class="linkOnly">' + (c.kind === 'link' ? 'リンクのみ保存しています。' : '本文がありません。') + (c.excerpt ? '<br>' + escHtml(c.excerpt) : '') + '</div>';
+  } else {
+    body.innerHTML = sanitizeHtml(html, hasUrl ? c.url : undefined);
+    const h = body.querySelector('h1,h2');
+    const norm = t => String(t || '').replace(/\s+/g, '');
+    if (h && norm(h.textContent) === norm(c.title) && !body.textContent.slice(0, body.textContent.indexOf(h.textContent)).trim()) h.remove();
+    decorateBody(body);
+  }
+  $('#readerPane').scrollTop = 0;
+  document.body.classList.add('reading');
+  if (push && isNarrow() && !pushedReader) { history.pushState({ wc: 'reader' }, ''); pushedReader = true; }
+}
+function closeReader() {
+  document.body.classList.remove('reading');
+  if (pushedReader) { pushedReader = false; history.back(); }
+}
+async function readerAction(act) {
+  const c = clips.find(x => x.id === currentId);
+  if (!c) return;
+  if (act === 'open') { window.open(c.url, '_blank', 'noopener,noreferrer'); return; }
+  if (act === 'copyurl') { toast(await copyText(c.url) ? 'リンクをコピーしました' : 'コピーできませんでした'); return; }
+  if (act === 'copymdlink') { toast(await copyText('[' + mdEsc(c.title) + '](' + mdUrl(c.url) + ')') ? 'Markdown リンクをコピーしました' : 'コピーできませんでした'); return; }
+  if (act === 'fs-' || act === 'fs+') { setFs(getFs() + (act === 'fs+' ? 1 : -1)); return; }
+  if (act === 'edit') { openEdit(c); return; }
+  if (act === 'del') {
+    const ok = await choose('「' + c.title + '」を削除します。元に戻せません。', [{ v: false, label: 'キャンセル' }, { v: true, label: '削除', cls: 'primary' }]);
+    if (!ok) return;
+    await dbDelete(c.id);
+    clips = clips.filter(x => x.id !== c.id);
+    currentId = null; renderSites(); renderList(); renderWelcome();
+    if (isNarrow()) closeReader();
+    toast('削除しました'); return;
+  }
+  const html = await dbGetBody(c.id);
+  if (act === 'copymd') { toast(await copyText(clipToMarkdown(c, html)) ? 'Markdown をコピーしました' : 'コピーできませんでした'); return; }
+  if (act === 'md') { download(safeName(c.title) + '.md', clipToMarkdown(c, html), 'text/markdown;charset=utf-8'); return; }
+  if (act === 'html') { download(safeName(c.title) + '.html', clipToHtml(c, html), 'text/html;charset=utf-8'); return; }
+}
+function getFs() { let v = 16; try { v = parseInt(localStorage.getItem(LS_FS) || '16', 10) || 16; } catch (e) {} return v; }
+function setFs(v) { v = Math.max(12, Math.min(24, v)); try { localStorage.setItem(LS_FS, String(v)); } catch (e) {} document.documentElement.style.setProperty('--fs', v + 'px'); }
+
+/* ---------- 編集 ---------- */
+function openEdit(c) {
+  const m = openModal('<h2>編集</h2>' +
+    '<label class="fld"><span>タイトル</span><input type="text" id="eTitle"></label>' +
+    '<label class="fld"><span>URL</span><input type="url" id="eUrl" placeholder="https://..."></label>' +
+    '<div class="grid2"><label class="fld"><span>サイト名</span><input type="text" id="eSite"></label>' +
+    '<label class="fld"><span>タグ（スペース・カンマ区切り）</span><input type="text" id="eTags"></label></div>' +
+    '<label class="fld"><span>メモ</span><textarea id="eMemo" rows="4"></textarea></label>' +
+    '<div id="eWarn"></div>' +
+    '<div class="modalBtns"><button id="eCancel">キャンセル</button><button id="eSave" class="primary">保存</button></div>');
+  m.querySelector('#eTitle').value = c.title; m.querySelector('#eUrl').value = c.url || '';
+  m.querySelector('#eSite').value = c.site || ''; m.querySelector('#eTags').value = (c.tags || []).join(' ');
+  m.querySelector('#eMemo').value = c.memo || '';
+  const warn = () => {
+    const u = m.querySelector('#eUrl').value.trim();
+    const d = isHttpUrl(u) ? findDup(u, '', c.id) : null;
+    m.querySelector('#eWarn').innerHTML = (u && !isHttpUrl(u)) ? '<div class="warnBox">URL は http:// か https:// で始まる形で入力してください。</div>'
+      : d ? '<div class="warnBox">同じ URL の記事がほかにもあります：「' + escHtml(d.title) + '」</div>' : '';
+  };
+  m.querySelector('#eUrl').addEventListener('input', warn); warn();
+  m.querySelector('#eCancel').onclick = closeModal;
+  m.querySelector('#eSave').onclick = async () => {
+    const u = m.querySelector('#eUrl').value.trim();
+    if (u && !isHttpUrl(u)) { toast('URL の形式を確認してください'); return; }
+    const nc = pickMeta(Object.assign({}, c, {
+      title: m.querySelector('#eTitle').value.trim() || c.title,
+      url: u, site: m.querySelector('#eSite').value.trim() || hostOf(u),
+      tags: parseTags(m.querySelector('#eTags').value), memo: m.querySelector('#eMemo').value,
+      updatedAt: new Date().toISOString(),
+    }));
+    if (u !== c.url) nc.canonical = '';
+    await dbPutMeta(nc);
+    clips = clips.map(x => x.id === c.id ? nc : x);
+    closeModal(); renderSites(); renderList(); openClip(nc.id, false);
+    toast('保存しました');
+  };
+}
+
+/* ---------- 取込 ---------- */
+function openImport() {
+  if (!$('#modalWrap').hidden && $('#pasteBox')) return $('#modal');
+  const m = openModal('<h2>取込</h2>' +
+    '<p class="note">ブックマークレットで「コピー」した内容、または記事ページを全選択してコピーした内容を貼り付けてください。URL だけを貼り付けると「リンクのみ」で保存できます。</p>' +
+    '<textarea id="pasteBox" placeholder="ここに貼り付け（Ctrl+V／長押し→ペースト）"></textarea>' +
+    '<div class="fldRow" style="margin-top:6px;align-items:center;flex-wrap:wrap"><button id="btnReadClip">クリップボードから読込</button>' +
+    '<span class="note">ブラウザが許可を求めることがあります</span></div>' +
+    '<div id="pv"></div>' +
+    '<div class="modalBtns"><button id="iCancel">閉じる</button><button id="iSave" class="primary" disabled>保存</button></div>');
+  const box = m.querySelector('#pasteBox');
+  box.addEventListener('paste', e => {
+    const cd = e.clipboardData;
+    if (!cd) return;
+    e.preventDefault();
+    applyPaste(cd.getData('text/html'), cd.getData('text/plain'));
+  });
+  let tm = null;   // キーボードの候補などから入力された場合（paste イベントが来ない場合）
+  box.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { const v = box.value; if (v.trim()) { box.value = ''; applyPaste('', v); } }, 400); });
+  m.querySelector('#btnReadClip').onclick = readClipboard;
+  m.querySelector('#iCancel').onclick = closeModal;
+  m.querySelector('#iSave').onclick = savePending;
+  if (!isNarrow()) setTimeout(() => box.focus(), 50);
+  return m;
+}
+async function readClipboard() {
+  try {
+    if (navigator.clipboard && navigator.clipboard.read) {
+      const items = await navigator.clipboard.read();
+      let html = '', text = '';
+      for (const it of items) {
+        if (it.types.includes('text/html')) html = await (await it.getType('text/html')).text();
+        if (it.types.includes('text/plain')) text = await (await it.getType('text/plain')).text();
+      }
+      applyPaste(html, text); return;
+    }
+    if (navigator.clipboard && navigator.clipboard.readText) { applyPaste('', await navigator.clipboard.readText()); return; }
+  } catch (e) {}
+  toast('クリップボードを読み取れませんでした。貼り付け欄に貼り付けてください', 4000);
+}
+function applyPaste(html, text) {
+  const r = interpretPaste(html, text);
+  if (r.type === 'error') { toast(r.message, 4000); return; }
+  if (r.type === 'url') {
+    if (pending && pending.kind !== 'link' && !pending.url) { pending.url = r.url; pending.site = pending.site || hostOf(r.url); renderPending(); toast('URL を設定しました'); return; }
+    pending = buildDraft({ kind: 'link', url: r.url, title: '' });
+    pending.title = r.url;
+  } else {
+    const keepUrl = pending && pending.kind === 'link' && r.type !== 'payload' ? pending.url : '';
+    pending = r.draft;
+    if (keepUrl && !pending.url) { pending.url = keepUrl; pending.site = hostOf(keepUrl); }
+  }
+  renderPending();
+}
+function renderPending() {
+  const m = $('#modal'), pv = m.querySelector('#pv');
+  if (!pv) return;
+  const d = pending;
+  if (!d) { pv.innerHTML = ''; m.querySelector('#iSave').disabled = true; return; }
+  const info = d.kind === 'link' ? 'リンクのみ（本文なし）'
+    : (KIND_LABEL[d.kind] || d.kind) + '・約' + d.chars.toLocaleString() + '字・画像' + d.images + '枚';
+  pv.innerHTML = '<h3>内容の確認</h3>' +
+    '<div class="infoBox">' + escHtml(info) + '</div>' +
+    '<label class="fld"><span>タイトル</span><input type="text" id="pTitle"></label>' +
+    '<label class="fld"><span>URL' + (d.kind === 'paste' ? '（貼り付けでは自動で入らないので、必要なら入力してください）' : '') + '</span><input type="url" id="pUrl" placeholder="https://..."></label>' +
+    '<div id="pWarn"></div>' +
+    '<div class="grid2"><label class="fld"><span>サイト名</span><input type="text" id="pSite"></label>' +
+    '<label class="fld"><span>タグ（スペース・カンマ区切り）</span><input type="text" id="pTags"></label></div>' +
+    '<label class="fld"><span>メモ</span><textarea id="pMemo" rows="2"></textarea></label>' +
+    (d.kind === 'link' ? '' : '<div class="pvBody" id="pvBody"></div>');
+  pv.querySelector('#pTitle').value = d.title; pv.querySelector('#pUrl').value = d.url;
+  pv.querySelector('#pSite').value = d.site; pv.querySelector('#pTags').value = (d.tags || []).join(' ');
+  pv.querySelector('#pMemo').value = d.memo || '';
+  if (d.kind !== 'link') {
+    const b = pv.querySelector('#pvBody');
+    b.innerHTML = d.html || '<span class="note">（本文が空です）</span>';
+    decorateBody(b);
+  }
+  const onUrl = () => {
+    const u = pv.querySelector('#pUrl').value.trim();
+    d.url = u;
+    if (!pv.querySelector('#pSite').value.trim() || pv.querySelector('#pSite').dataset.auto === '1') { pv.querySelector('#pSite').value = hostOf(u); pv.querySelector('#pSite').dataset.auto = '1'; }
+    const dup = isHttpUrl(u) ? findDup(u, d.canonical) : null;
+    pv.querySelector('#pWarn').innerHTML = (u && !isHttpUrl(u)) ? '<div class="warnBox">URL は http:// か https:// で始まる形で入力してください。</div>'
+      : dup ? '<div class="warnBox">同じ URL の記事が保存済みです：「' + escHtml(dup.title) + '」（' + fmtDate(dup.createdAt, false) + '）</div>' : '';
+  };
+  pv.querySelector('#pUrl').addEventListener('input', onUrl);
+  pv.querySelector('#pSite').addEventListener('input', e => { e.target.dataset.auto = '0'; });
+  onUrl();
+  m.querySelector('#iSave').disabled = false;
+}
+async function savePending() {
+  const d = pending, m = $('#modal');
+  if (!d) return;
+  const url = m.querySelector('#pUrl').value.trim();
+  if (url && !isHttpUrl(url)) { toast('URL の形式を確認してください'); return; }
+  if (d.kind === 'link' && !url) { toast('リンクのみの保存には URL が必要です'); return; }
+  const now = new Date().toISOString();
+  let id = uid(), createdAt = now, tags = parseTags(m.querySelector('#pTags').value), memo = m.querySelector('#pMemo').value;
+  const dup = url ? findDup(url, d.canonical) : null;
+  if (dup) {
+    const ans = await choose('同じ URL の記事が保存されています。\n「' + dup.title + '」（' + fmtDate(dup.createdAt, false) + '）', [
+      { v: 'cancel', label: 'キャンセル' }, { v: 'new', label: '別の記事として保存' }, { v: 'over', label: '上書き', cls: 'primary' }]);
+    if (ans === 'cancel') return;
+    if (ans === 'over') {
+      id = dup.id; createdAt = dup.createdAt;
+      tags = Array.from(new Set([...(dup.tags || []), ...tags]));
+      memo = memo || dup.memo || '';
+    }
+  }
+  const meta = pickMeta(Object.assign({}, d, {
+    id, url, title: m.querySelector('#pTitle').value.trim() || d.title, site: m.querySelector('#pSite').value.trim() || hostOf(url),
+    tags, memo, createdAt, updatedAt: now,
+  }));
+  try { await dbPutMany([{ meta, html: d.html }]); }
+  catch (e) { toast('保存できませんでした：' + (e && e.message || e), 5000); return; }
+  clips = clips.filter(x => x.id !== id).concat([meta]);
+  if (!persistAsked) { persistAsked = true; try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {} }
+  closeModal(); renderSites(); renderList(); openClip(id);
+  toast(dup && id === dup.id ? '上書きしました' : '保存しました');
+}
+
+/* ---------- ブックマークレット ---------- */
+function appUrlForBookmarklet() { return /^https?:$/.test(location.protocol) ? location.origin + location.pathname : ''; }
+/* WC_BM 用の簡易圧縮：空白だけを詰める（文字列・正規表現の中は触らない）。
+   WC_BM はコメントなし・文は必ず ; で終える前提で書いている。 */
+function minifyJs(src) {
+  const idc = c => /[A-Za-z0-9_$]/.test(c);
+  const reAfterPunct = /^[(,=:\[!&|?{};+\-*%<>~^]$/, reAfterWord = /^(return|typeof|in|of|new|delete|void|throw|case)$/;
+  let out = '', i = 0, prev = '', space = false;
+  const n = src.length;
+  while (i < n) {
+    const c = src[i];
+    if (/\s/.test(c)) { space = true; i++; continue; }
+    let j = i + 1;
+    if (c === '"' || c === "'") {
+      while (j < n && src[j] !== c) { if (src[j] === '\\') j++; j++; }
+      j++;
+    } else if (c === '/' && (prev === '' || reAfterPunct.test(prev) || reAfterWord.test(prev))) {
+      let cls = false;
+      while (j < n) { const d = src[j]; if (d === '\\') { j += 2; continue; } if (d === '[') cls = true; else if (d === ']') cls = false; else if (d === '/' && !cls) break; j++; }
+      j++;
+      while (j < n && /[a-z]/i.test(src[j])) j++;
+    } else if (idc(c)) {
+      while (j < n && idc(src[j])) j++;
+    }
+    const tok = src.slice(i, j);
+    if (space && out && idc(out[out.length - 1]) && idc(tok[0])) out += ' ';
+    space = false; out += tok; prev = tok; i = j;
+  }
+  return out;
+}
+function bookmarkletCode() {
+  return '(' + minifyJs(WC_BM.toString()) + ')(' + JSON.stringify(appUrlForBookmarklet()) + ',' + JSON.stringify(APP_VERSION) + ');void 0';
+}
+function bookmarkletUrl() { return 'javascript:' + encodeURIComponent(bookmarkletCode()); }
+function openBookmarklet() {
+  const url = bookmarkletUrl(), app = appUrlForBookmarklet();
+  const m = openModal('<h2>ブックマークレット</h2>' +
+    '<p class="note">保存したいページで実行すると、本文を抜き出す小さなパネルが出ます。「本文／全体／選択」を切り替えて「コピー」し、WebClip の「取込」に貼り付けます。</p>' +
+    '<p style="margin:10px 0"><a class="bmLink" id="bmLink">WebClip</a>　<span class="note">← PC はこれをブックマークバーへドラッグ</span></p>' +
+    '<div class="fldRow" style="align-items:center;flex-wrap:wrap"><button id="bmCopy" class="primary">コードをコピー</button><span class="note">' + Math.round(url.length / 1024 * 10) / 10 + ' KB（v' + APP_VERSION + '）</span></div>' +
+    (app ? '<div class="infoBox">「アプリへ送る」ボタンが使えます。送り先：' + escHtml(app) + '<br>アプリの URL が変わったら、ブックマークレットを登録し直してください。</div>'
+         : '<div class="warnBox">このアプリをファイル（file://）で開いているため、「アプリへ送る」は使えません。「コピー」→「取込」に貼り付けで取り込んでください。GitHub Pages などの https で開くと「アプリへ送る」も使えます。</div>') +
+    '<h3>登録のしかた</h3>' +
+    '<b style="font-size:13px">PC（Chrome・Edge）</b><ol class="steps"><li>上の「WebClip」ボタンをブックマークバーへドラッグします。</li><li>保存したいページでブックマークをクリックします。</li></ol>' +
+    '<b style="font-size:13px">iPad（Safari）</b><ol class="steps"><li>「コードをコピー」を押します。</li><li>適当なページを開き、共有ボタン→「ブックマークを追加」で保存します。</li><li>ブックマーク一覧でそのブックマークを「編集」し、名前を「WebClip」に、アドレスを消してコピーしたコードを貼り付けます。</li><li>保存したいページで、ブックマーク一覧から「WebClip」を選びます。</li></ol>' +
+    '<b style="font-size:13px">Android（Chrome）</b><ol class="steps"><li>「コードをコピー」を押します。</li><li>適当なページで☆をタップしてブックマークを作り、「編集」で名前を「WebClip」に、URL をコピーしたコードに置き換えます。</li><li>保存したいページで、アドレスバーに「WebClip」と入力し、候補に出たブックマーク（★の付いたもの）をタップします。</li></ol>' +
+    '<p class="note">サイトによっては（セキュリティ設定が厳しい場合など）動かないことがあります。そのときは、ページを全選択してコピーし、「取込」に貼り付けてください。</p>' +
+    '<details style="margin-top:8px"><summary class="note" style="cursor:pointer">コードを表示</summary><textarea id="bmCode" rows="5" readonly style="font-family:monospace;font-size:11px"></textarea></details>' +
+    '<div class="modalBtns"><button id="bmClose">閉じる</button></div>');
+  m.querySelector('#bmLink').setAttribute('href', url);
+  m.querySelector('#bmLink').addEventListener('click', e => { e.preventDefault(); toast('ブックマークバーへドラッグして登録してください'); });
+  m.querySelector('#bmCode').value = url;
+  m.querySelector('#bmCopy').onclick = async () => toast(await copyText(url) ? 'コードをコピーしました' : 'コピーできませんでした。「コードを表示」から選択してコピーしてください', 3500);
+  m.querySelector('#bmClose').onclick = closeModal;
+}
+
+/* ---------- バックアップ ---------- */
+function getLastBackup() { try { return localStorage.getItem(LS_BACKUP) || ''; } catch (e) { return ''; } }
+async function openBackup() {
+  let est = '';
+  try { if (navigator.storage && navigator.storage.estimate) { const e = await navigator.storage.estimate(); est = (e.usage / 1048576).toFixed(1) + ' MB 使用'; } } catch (e) {}
+  let persisted = '';
+  try { if (navigator.storage && navigator.storage.persisted) persisted = (await navigator.storage.persisted()) ? '保護あり' : '保護なし（ブラウザが容量不足時などに削除する可能性あり）'; } catch (e) {}
+  const lb = getLastBackup();
+  const m = openModal('<h2>バックアップ</h2>' +
+    '<div class="kv"><b>保存件数</b>' + clips.length + ' 件<br><b>最終書き出し</b>' + (lb ? fmtDate(lb) : 'まだありません') +
+    (est ? '<br><b>使用容量</b>' + est : '') + (persisted ? '<br><b>保存領域</b>' + persisted : '') + (memMode ? '<br><b>注意</b><span style="color:var(--ng)">保存領域が使えないため、画面を閉じると消えます</span>' : '') + '</div>' +
+    '<h3>全件</h3><div class="fldRow" style="flex-wrap:wrap"><button id="bExport" class="primary">JSON 書き出し</button><button id="bImport">JSON 読み込み</button></div>' +
+    '<p class="note">読み込みは追加・統合です。同じ記事（同じ ID）は更新日時が新しいほうを残します。</p>' +
+    '<h3>リンク一覧</h3><div class="fldRow" style="flex-wrap:wrap"><button id="bLinksMd">.md で保存</button><button id="bLinksCopy">コピー</button></div>' +
+    '<p class="note">一覧で絞り込んでいる場合は、表示中の記事だけを書き出します（' + filteredClips().length + ' 件）。サイトごとにまとめた Markdown です。</p>' +
+    '<p class="note">iPad・iPhone の Safari では、ホーム画面に追加していないサイトのデータが、しばらく使わないと消えることがあります。定期的な書き出しをおすすめします。</p>' +
+    '<div class="modalBtns"><button id="bClose">閉じる</button></div>');
+  m.querySelector('#bExport').onclick = exportJson;
+  m.querySelector('#bImport').onclick = () => $('#fileIn').click();
+  m.querySelector('#bLinksMd').onclick = () => download('WebClip_links_' + new Date().toISOString().slice(0, 10) + '.md', linksMarkdown(filteredClips()), 'text/markdown;charset=utf-8');
+  m.querySelector('#bLinksCopy').onclick = async () => toast(await copyText(linksMarkdown(filteredClips())) ? 'リンク一覧をコピーしました' : 'コピーできませんでした');
+  m.querySelector('#bClose').onclick = closeModal;
+}
+async function exportJson() {
+  const out = [];
+  for (const c of clips) out.push(Object.assign(pickMeta(c), { html: await dbGetBody(c.id) }));
+  const data = { app: 'WebClip', format: BACKUP_FORMAT, version: APP_VERSION, exportedAt: new Date().toISOString(), clips: out };
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  download('WebClip_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + '.json', JSON.stringify(data, null, 1), 'application/json');
+  try { localStorage.setItem(LS_BACKUP, data.exportedAt); } catch (e) {}
+  toast(out.length + ' 件を書き出しました');
+  if (!$('#modalWrap').hidden && $('#bExport')) openBackup();
+}
+async function importJson(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch (e) { toast('JSON を読み込めませんでした', 4000); return; }
+  if (!data || data.app !== 'WebClip' || !Array.isArray(data.clips)) { toast('WebClip のバックアップ形式ではありません', 4000); return; }
+  if (data.format > BACKUP_FORMAT) { toast('新しい版のバックアップです。アプリを更新してください', 4000); return; }
+  const byId = new Map(clips.map(c => [c.id, c]));
+  const items = []; let add = 0, upd = 0, skip = 0;
+  for (const raw of data.clips) {
+    if (!raw || typeof raw !== 'object' || !raw.id) { skip++; continue; }
+    const url = String(raw.url || '');
+    const html = sanitizeHtml(String(raw.html || ''), isHttpUrl(url) ? url : undefined);
+    const meta = pickMeta(Object.assign({}, raw));
+    meta.id = String(raw.id); meta.kind = KIND_LABEL[meta.kind] ? meta.kind : 'paste';
+    meta.title = String(meta.title || url || '無題'); meta.url = url;
+    meta.createdAt = meta.createdAt || new Date().toISOString(); meta.updatedAt = meta.updatedAt || meta.createdAt;
+    meta.tags = Array.isArray(raw.tags) ? raw.tags.map(String) : [];
+    if (typeof meta.text !== 'string') { meta.text = htmlToText(html); meta.chars = meta.text.replace(/\s/g, '').length; }
+    const ex = byId.get(meta.id);
+    if (ex && String(ex.updatedAt) >= String(meta.updatedAt)) { skip++; continue; }
+    ex ? upd++ : add++;
+    items.push({ meta, html }); byId.set(meta.id, meta);
+  }
+  try { await dbPutMany(items); } catch (e) { toast('読み込みに失敗しました：' + (e && e.message || e), 5000); return; }
+  clips = Array.from(byId.values());
+  renderSites(); renderList();
+  closeModal();
+  toast('追加 ' + add + ' 件・更新 ' + upd + ' 件・変更なし ' + skip + ' 件', 4000);
+}
+
+/* ---------- ブックマークレットからの受信 ---------- */
+const receivedIds = new Set();
+let ready = null;
+window.addEventListener('message', async e => {
+  const m = e.data;
+  if (!m || m.webclip !== 1 || !m.id || !m.data || m.data.wc !== 1) return;
+  try { e.source && e.source.postMessage({ webclipAck: m.id }, e.origin && e.origin !== 'null' ? e.origin : '*'); } catch (x) {}
+  if (receivedIds.has(m.id)) return;
+  receivedIds.add(m.id);
+  await ready;
+  closeModal();
+  openImport();
+  pending = draftFromPayload(m.data);
+  renderPending();
+  toast('ブックマークレットから受け取りました。確認して保存してください', 3500);
+});
+
+/* ---------- イベント ---------- */
+$('#btnImport').onclick = () => openImport();
+$('#btnBm').onclick = openBookmarklet;
+$('#btnBackup').onclick = openBackup;
+$('#btnBack').onclick = closeReader;
+$('#fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importJson(f); };
+$('#q').addEventListener('input', renderList);
+$('#fSite').addEventListener('change', renderList);
+$('#fSort').addEventListener('change', renderList);
+$('#list').addEventListener('click', e => {
+  if (e.target.closest('a.ext')) return;
+  const tg = e.target.closest('.tag');
+  if (tg) { e.stopPropagation(); $('#q').value = '#' + tg.dataset.tag; renderList(); return; }
+  const li = e.target.closest('li[data-id]');
+  if (li) openClip(li.dataset.id);
+});
+$('#reader').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (b) { readerAction(b.dataset.act); return; }
+  const tg = e.target.closest('.tag');
+  if (tg) { $('#q').value = '#' + tg.dataset.tag; renderList(); if (isNarrow()) closeReader(); }
+});
+window.addEventListener('popstate', () => { if (pushedReader || document.body.classList.contains('reading')) { pushedReader = false; document.body.classList.remove('reading'); } });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!$('#dlgWrap').hidden) return;
+  if (!$('#modalWrap').hidden) closeModal();
+});
+document.addEventListener('paste', e => {   // 一覧画面で Ctrl+V したときも取込として扱う
+  if (!$('#modalWrap').hidden) return;
+  if (e.target.closest && e.target.closest('input,textarea,[contenteditable]')) return;
+  const cd = e.clipboardData; if (!cd) return;
+  e.preventDefault();
+  openImport();
+  applyPaste(cd.getData('text/html'), cd.getData('text/plain'));
+});
+
+/* ---------- 起動 ---------- */
+ready = (async function init() {
+  $('#ver').textContent = 'v' + APP_VERSION;
+  setFs(getFs());
+  try { db = await idbOpen(); } catch (e) { memMode = true; toast('この環境では保存領域を使えません。データは画面を閉じると消えます', 6000); }
+  try { clips = (await dbGetAll()).map(pickMeta); } catch (e) { clips = []; }
+  renderSites(); renderList(); renderWelcome();
+  if (location.hash === '#receive') {
+    history.replaceState(null, '', location.pathname + location.search);
+    if (!receivedIds.size) toast('ブックマークレットからの受信を待っています…', 3000);
+  }
+})();
+</script>
+</body>
+</html>
