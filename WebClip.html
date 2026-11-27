@@ -6,6 +6,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#1f2937">
+<meta name="apple-mobile-web-app-title" content="WebClip">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>WebClip 記事保存</title>
 <style>
 :root{
@@ -166,7 +171,7 @@ a{color:var(--accent)}
 
 <script>
 'use strict';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 /* 保存データ（IndexedDB "webclip"）
    clips  : { id, kind, url, canonical, title, site, author, published, excerpt, image,
               text, chars, images, tags[], memo, createdAt, updatedAt }
@@ -670,6 +675,24 @@ function linksMarkdown(list) {
   return md;
 }
 function siteKey(c) { return hostOf(c.url) || '(URLなし)'; }
+
+/* 共有メニュー（Web Share Target）で受け取った内容 → 下書き。何もなければ null。
+   Android の Chrome は URL を text に入れて送ることが多い。選択文字を共有すると「文字列 + URL（#:~:text=…）」になる。 */
+function draftFromShare(title, text, url) {
+  title = String(title || '').trim(); text = String(text || '').trim(); url = String(url || '').trim();
+  if (!isHttpUrl(url)) {
+    url = '';
+    const m = text.match(/https?:\/\/[^\s<>"]+/);
+    if (m) { url = m[0]; text = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim(); }
+  } else if (text === url) text = '';
+  url = url.replace(/#:~:text=.*$/, '');
+  if (text && text !== title) {
+    const html = text.split(/\n{2,}/).map(p => '<p>' + escHtml(p).replace(/\n/g, '<br>') + '</p>').join('');
+    return buildDraft({ kind: 'paste', url, title, html });
+  }
+  if (!url) return null;
+  return buildDraft({ kind: 'link', url, title });
+}
 
 /* ---------- 汎用 ---------- */
 function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch])); }
@@ -1243,7 +1266,16 @@ ready = (async function init() {
     history.replaceState(null, '', location.pathname + location.search);
     if (!receivedIds.size) toast('ブックマークレットからの受信を待っています…', 3000);
   }
+  const sp = new URLSearchParams(location.search);
+  if (sp.has('url') || sp.has('text') || sp.has('title')) {   // 共有メニューから起動された
+    history.replaceState(null, '', location.pathname);
+    const d = draftFromShare(sp.get('title'), sp.get('text'), sp.get('url'));
+    if (d) { openImport(); pending = d; renderPending(); toast('共有メニューから受け取りました。確認して保存してください', 3500); }
+  }
 })();
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
 </script>
 </body>
 </html>

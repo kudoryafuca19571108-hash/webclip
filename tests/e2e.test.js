@@ -22,9 +22,10 @@ function ok(name, cond, extra) {
 }
 
 function serve(dir, port, headers) {
-  const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.gif': 'image/gif', '.png': 'image/png', '.json': 'application/json' };
+  const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.gif': 'image/gif', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
   const srv = http.createServer((req, res) => {
-    const p = path.join(dir, decodeURIComponent(new URL(req.url, 'http://x').pathname));
+    let p = path.join(dir, decodeURIComponent(new URL(req.url, 'http://x').pathname));
+    if (p.startsWith(dir) && fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');   // GitHub Pages と同じくディレクトリは index.html
     if (!p.startsWith(dir) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) {
       // 画像は存在しなくても 1x1 GIF を返す
       if (/\.(png|gif)$/.test(p)) { res.writeHead(200, Object.assign({ 'Content-Type': 'image/gif' }, headers)); res.end(Buffer.from('R0lGODlhAQABAAAAACw=', 'base64')); return; }
@@ -356,6 +357,50 @@ async function pasteInto(page, sel, data) {
   await ph.waitForFunction(() => !document.body.classList.contains('reading'));
   ok('10e 「‹ 一覧」で一覧へ', await ph.isVisible('#listPane'));
   await ctx3.close();
+
+  // ---- 11. PWA（インストール・オフライン・共有メニュー） ----
+  const ctx4 = await browser.newContext({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true });
+  const pw = await ctx4.newPage();
+  pw.on('pageerror', e => errors.push('pwa: ' + e.message));
+  await pw.goto(`http://127.0.0.1:${APP_PORT}/`);
+  await pw.waitForURL(/WebClip\.html$/);
+  ok('11a トップ URL から WebClip.html へ転送', true);
+  const mf = await pw.evaluate(async () => (await fetch(document.querySelector('link[rel=manifest]').href)).json());
+  ok('11b マニフェスト（名前・standalone・アイコン・共有）', mf.short_name === 'WebClip' && mf.display === 'standalone' &&
+    mf.icons.some(i => i.sizes === '512x512' && i.purpose === 'maskable') && mf.share_target && mf.share_target.params.url === 'url');
+  const iconOk = await pw.evaluate(async m => {
+    for (const i of m.icons) { const r = await fetch(i.src); if (!r.ok) return i.src; const b = await createImageBitmap(await r.blob()); if (b.width + 'x' + b.height !== i.sizes) return i.src + ' ' + b.width; }
+    return 'ok';
+  }, mf);
+  ok('11c アイコンが読め、サイズが合っている', iconOk === 'ok', iconOk);
+  await pw.evaluate(() => navigator.serviceWorker.ready);
+  ok('11d Service Worker が有効', await pw.evaluate(() => !!navigator.serviceWorker.controller) || (await pw.reload(), await pw.evaluate(() => !!navigator.serviceWorker.controller)));
+  const cdp = await ctx4.newCDPSession(pw);
+  const inst = await cdp.send('Page.getInstallabilityErrors');
+  ok('11e Chromium の判定でインストール可能', inst.installabilityErrors.length === 0, JSON.stringify(inst.installabilityErrors));
+  const man = await cdp.send('Page.getAppManifest');
+  ok('11f マニフェストの解析エラーなし', man.errors.length === 0, JSON.stringify(man.errors));
+  // オフライン起動
+  await ctx4.setOffline(true);
+  await pw.reload();
+  await pw.waitForFunction(() => document.querySelector('#count').textContent !== '');
+  ok('11g オフラインでも起動する', (await pw.textContent('.appbar')).includes('WebClip'));
+  await ctx4.setOffline(false);
+  // 共有メニュー：URL だけ（Android の Chrome は text に URL を入れる）
+  await pw.goto(APP + '?title=' + encodeURIComponent('共有されたページ') + '&text=' + encodeURIComponent('https://share.example.com/news/1'));
+  await pw.waitForSelector('#pTitle');
+  ok('11h 共有（URL）→ リンクのみの確認画面', await pw.inputValue('#pTitle') === '共有されたページ' && await pw.inputValue('#pUrl') === 'https://share.example.com/news/1' &&
+    (await pw.textContent('.infoBox')).includes('リンクのみ'));
+  ok('11i 共有パラメータを URL から消す', !pw.url().includes('?'), pw.url());
+  await pw.click('#iSave');
+  await pw.waitForSelector('#modalWrap[hidden]', { state: 'attached' });
+  ok('11j 共有から保存', (await pw.textContent('#list')).includes('共有されたページ'));
+  // 共有メニュー：選択した文字（文字列 + #:~:text= 付き URL）
+  await pw.goto(APP + '?text=' + encodeURIComponent('"かぶり厚さは重要" https://share.example.com/news/2#:~:text=abc'));
+  await pw.waitForSelector('#pTitle');
+  ok('11k 共有（選択文字）→ 本文つき・URL のテキスト断片を除く', await pw.inputValue('#pUrl') === 'https://share.example.com/news/2' &&
+    (await pw.textContent('#pvBody')).includes('かぶり厚さは重要'));
+  await ctx4.close();
 
   await app.screenshot({ path: path.join(os.tmpdir(), 'webclip_pc.png') });
   ok('99 ページエラーなし', errors.length === 0, errors.join(' / '));
