@@ -39,9 +39,10 @@ function serve(dir, port, headersOf) {
   return new Promise(r => srv.listen(port, '127.0.0.1', () => r(srv)));
 }
 
-async function bookmarkletSource(page) {
+// sel：'#bmLinkFull'（完全版）または '#bmLink'（短い版）
+async function bookmarkletSource(page, sel = '#bmLinkFull') {
   await page.click('#btnBm');
-  const href = await page.getAttribute('#bmLink', 'href');
+  const href = await page.getAttribute(sel, 'href');
   await page.click('#bmClose');
   return { href, code: decodeURIComponent(href.replace(/^javascript:/, '')) };
 }
@@ -551,6 +552,36 @@ async function pasteInto(page, sel, data) {
   await app.click('#list li:has-text("鉄筋の定着長さ")');
   await app.waitForSelector('.rd .tagRow');
   ok('14l 閲覧画面にタグ編集ボタン', (await app.textContent('.rd .tagRow')).includes('タグ編集'));
+
+  // ---- 15. 短い版ブックマークレット（bm.js を読み込む） ----
+  let built = true; try { require('child_process').execFileSync('node', [path.join(ROOT, 'tools', 'build-bm.js'), '--check'], { stdio: 'pipe' }); } catch (e) { built = false; }
+  ok('15a bm.js が WebClip.html と一致（生成済み）', built);
+  const sbm = await bookmarkletSource(app, '#bmLink');
+  ok('15b 短い版は 1,000 文字未満', sbm.href.length < 1000, sbm.href.length);
+  ok('15c 読み込み先は公開ページの bm.js', sbm.code.includes(JSON.stringify(`http://127.0.0.1:${APP_PORT}/bm.js`)));
+  const sp = await ctx.newPage();
+  sp.on('pageerror', e => errors.push('short: ' + e.message));
+  await sp.goto(SITE + '/blog.html');
+  await sp.evaluate(sbm.code);
+  await sp.waitForSelector('#__webclip', { timeout: 10000 });
+  await waitImages(sp);
+  const spt = await panelText(sp);
+  ok('15d CSP なしのページでパネルが出る（アプリへ送る付き）', spt.includes('週末の現場見学') && spt.includes('アプリへ送る') && spt.includes('2/4枚を保存'), spt);
+  const [pop2] = await Promise.all([ctx.waitForEvent('page'), clickPanel(sp, 'アプリへ送る')]);
+  await pop2.waitForSelector('#pTitle', { timeout: 15000 });
+  ok('15e 短い版から「アプリへ送る」', await pop2.inputValue('#pTitle') === '週末の現場見学 - サンプルブログ' && pop2.url().startsWith(APP));
+  await pop2.close();
+  await sp.evaluate(sbm.code);
+  await sp.waitForFunction(() => !document.getElementById('__webclip'), null, { timeout: 10000 });
+  ok('15f もう一度実行するとパネルが閉じる', true);
+  await sp.goto(SITE + '/article.html');   // script-src 'self' の CSP で外部の bm.js は読み込めない
+  const [dlg] = await Promise.all([sp.waitForEvent('dialog', { timeout: 10000 }), sp.evaluate(sbm.code)]);
+  ok('15g CSP で読み込めないページでは案内を表示', dlg.message().includes('このページでは読み込めません'), dlg.message());
+  await dlg.dismiss();
+  await sp.close();
+  await app.click('#btnBm');
+  ok('15h 画面に短い版と完全版', await app.isVisible('#bmLink') && (await app.textContent('#modal')).includes('完全版'));
+  await app.click('#bmClose');
 
   await app.screenshot({ path: path.join(os.tmpdir(), 'webclip_pc.png') });
   ok('99 ページエラーなし', errors.length === 0, errors.join(' / '));

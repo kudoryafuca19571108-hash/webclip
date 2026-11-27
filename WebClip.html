@@ -199,7 +199,7 @@ a{color:var(--accent)}
 
 <script>
 'use strict';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 /* 保存データ（IndexedDB "webclip"）
    clips  : { id, kind, url, canonical, title, site, author, published, excerpt, image,
               text, chars, images, tags[], memo, createdAt, updatedAt, order }
@@ -212,7 +212,8 @@ const KIND_LABEL = { article:'本文', page:'ページ全体', selection:'選択
 
 /*BM-START*/
 /* ブックマークレット本体。表示中のページの中で実行される。
-   外部ファイルを読まない・<style> を挿入しない（CSP 対策）・行コメントを書かない（1行化のため）。 */
+   外部ファイルを読まない・<style> を挿入しない（CSP 対策）・行コメントを書かない（1行化のため）。
+   完全版はこの関数をそのまま埋め込む。短い版は tools/build-bm.js で生成した bm.js を読み込む（v1.2.1）。 */
 function WC_BM(APP, VER) {
   var D = document, W = window, B = D.body, old = D.getElementById('__webclip');
   if (old) { old.remove(); return; }
@@ -1434,25 +1435,46 @@ function bookmarkletCode() {
   return '(' + minifyJs(WC_BM.toString()) + ')(' + JSON.stringify(appUrlForBookmarklet()) + ',' + JSON.stringify(APP_VERSION) + ');void 0';
 }
 function bookmarkletUrl() { return 'javascript:' + encodeURIComponent(bookmarkletCode()); }
+/* 短い版：実行時に公開ページの bm.js を読み込む（https で開いているときだけ作れる） */
+function bookmarkletShortUrl() {
+  const app = appUrlForBookmarklet();
+  if (!app) return '';
+  const src = app.replace(/[^\/]*$/, '') + 'bm.js';
+  const code = "(function(){var d=document,s=d.createElement('script');s.src=" + JSON.stringify(src) + "+'?t='+Date.now();" +
+    "s.onerror=function(){alert(" + JSON.stringify('WebClip：このページでは読み込めません（サイトの制限）。完全版を使うか、全選択→コピー→取込に貼り付けてください') + ")};" +
+    "(d.body||d.documentElement).appendChild(s)})();void 0";
+  return 'javascript:' + encodeURIComponent(code);
+}
 function openBookmarklet() {
-  const url = bookmarkletUrl(), app = appUrlForBookmarklet();
+  const full = bookmarkletUrl(), short = bookmarkletShortUrl(), app = appUrlForBookmarklet();
+  const kb = u => Math.round(u.length / 1024 * 10) / 10 + ' KB';
+  const fullBox = '<div class="fldRow" style="align-items:center;flex-wrap:wrap;margin:6px 0"><a class="bmLink" id="bmLinkFull">WebClip</a><button id="bmCopyFull">完全版のコードをコピー</button>' +
+    '<span class="note">' + full.length.toLocaleString() + ' 文字（' + kb(full) + '）</span></div>';
   const m = openModal('<h2>ブックマークレット</h2>' +
     '<p class="note">保存したいページで実行すると、本文を抜き出す小さなパネルが出ます。「本文／全体／選択」を切り替えて「コピー」し、WebClip の「取込」に貼り付けます。</p>' +
-    '<p style="margin:10px 0"><a class="bmLink" id="bmLink">WebClip</a>　<span class="note">← PC はこれをブックマークバーへドラッグ</span></p>' +
-    '<div class="fldRow" style="align-items:center;flex-wrap:wrap"><button id="bmCopy" class="primary">コードをコピー</button><span class="note">' + Math.round(url.length / 1024 * 10) / 10 + ' KB（v' + APP_VERSION + '）</span></div>' +
-    (app ? '<div class="infoBox">「アプリへ送る」ボタンが使えます。送り先：' + escHtml(app) + '<br>アプリの URL が変わったら、ブックマークレットを登録し直してください。</div>'
-         : '<div class="warnBox">このアプリをファイル（file://）で開いているため、「アプリへ送る」は使えません。「コピー」→「取込」に貼り付けで取り込んでください。GitHub Pages などの https で開くと「アプリへ送る」も使えます。</div>') +
+    (short
+      ? '<h3>短い版（おすすめ）</h3>' +
+        '<div class="fldRow" style="align-items:center;flex-wrap:wrap;margin:6px 0"><a class="bmLink" id="bmLink">WebClip</a><button id="bmCopy" class="primary">コードをコピー</button>' +
+        '<span class="note">' + short.length.toLocaleString() + ' 文字</span></div>' +
+        '<p class="note">実行するたびに、公開ページから最新の本体（bm.js）を読み込みます。アプリを更新しても登録し直す必要がありません。インターネット接続が必要です。サイトのセキュリティ設定で外部の読み込みが禁止されているページでは「読み込めません」と表示されるので、完全版か貼り付けを使ってください。</p>' +
+        '<div class="infoBox">「アプリへ送る」の送り先：' + escHtml(app) + '</div>' +
+        '<details style="margin-top:8px"><summary class="note" style="cursor:pointer">完全版（長い・本体をすべて含む）</summary>' +
+        '<p class="note">外部を読み込まないので、短い版が使えないページでも動く場合があります。とても長いため、スマホのブックマーク編集欄では途中で切れることがあります（最後が <code>void%200</code> または <code>void 0</code> で終わっているか確認してください）。アプリを更新したら登録し直してください。</p>' + fullBox + '</details>'
+      : '<div class="warnBox">このアプリをファイル（file://）で開いているため、完全版だけが使えます（「アプリへ送る」も使えません）。GitHub Pages などの https で開くと、短い版と「アプリへ送る」が使えます。</div>' + fullBox) +
     '<h3>登録のしかた</h3>' +
     '<b style="font-size:13px">PC（Chrome・Edge）</b><ol class="steps"><li>上の「WebClip」ボタンをブックマークバーへドラッグします。</li><li>保存したいページでブックマークをクリックします。</li></ol>' +
     '<b style="font-size:13px">iPad（Safari）</b><ol class="steps"><li>「コードをコピー」を押します。</li><li>適当なページを開き、共有ボタン→「ブックマークを追加」で保存します。</li><li>ブックマーク一覧でそのブックマークを「編集」し、名前を「WebClip」に、アドレスを消してコピーしたコードを貼り付けます。</li><li>保存したいページで、ブックマーク一覧から「WebClip」を選びます。</li></ol>' +
-    '<b style="font-size:13px">Android（Chrome）</b><ol class="steps"><li>「コードをコピー」を押します。</li><li>適当なページで☆をタップしてブックマークを作り、「編集」で名前を「WebClip」に、URL をコピーしたコードに置き換えます。</li><li>保存したいページで、アドレスバーに「WebClip」と入力し、候補に出たブックマーク（★の付いたもの）をタップします。</li></ol>' +
-    '<p class="note">サイトによっては（セキュリティ設定が厳しい場合など）動かないことがあります。そのときは、ページを全選択してコピーし、「取込」に貼り付けてください。</p>' +
-    '<details style="margin-top:8px"><summary class="note" style="cursor:pointer">コードを表示</summary><textarea id="bmCode" rows="5" readonly style="font-family:monospace;font-size:11px"></textarea></details>' +
+    '<b style="font-size:13px">Android（Chrome）</b><ol class="steps"><li>「コードをコピー」を押します。</li><li>適当なページで☆をタップしてブックマークを作り、「編集」で名前を「WebClip」に、URL をコピーしたコードに置き換えます。</li><li>保存したいページで、アドレスバーに「WebClip」と入力し、候補に出たブックマーク（★の付いたもの）をタップします。ブックマーク一覧から開いても動きません。</li></ol>' +
+    '<p class="note">どの方法でも動かないページでは、ページを全選択してコピーし、「取込」に貼り付けてください。</p>' +
     '<div class="modalBtns"><button id="bmClose">閉じる</button></div>');
-  m.querySelector('#bmLink').setAttribute('href', url);
-  m.querySelector('#bmLink').addEventListener('click', e => { e.preventDefault(); toast('ブックマークバーへドラッグして登録してください'); });
-  m.querySelector('#bmCode').value = url;
-  m.querySelector('#bmCopy').onclick = async () => toast(await copyText(url) ? 'コードをコピーしました' : 'コピーできませんでした。「コードを表示」から選択してコピーしてください', 3500);
+  const wire = (linkSel, btnSel, url) => {
+    const a = m.querySelector(linkSel);
+    a.setAttribute('href', url);
+    a.addEventListener('click', e => { e.preventDefault(); toast('ブックマークバーへドラッグして登録してください'); });
+    m.querySelector(btnSel).onclick = async () => toast(await copyText(url) ? 'コードをコピーしました' : 'コピーできませんでした', 3500);
+  };
+  if (short) wire('#bmLink', '#bmCopy', short);
+  wire('#bmLinkFull', '#bmCopyFull', full);
   m.querySelector('#bmClose').onclick = closeModal;
 }
 
