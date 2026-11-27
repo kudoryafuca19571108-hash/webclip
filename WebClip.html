@@ -63,6 +63,28 @@ a{color:var(--accent)}
 .kind{display:inline-block;font-size:11px;padding:0 6px;border-radius:9px;background:#eef2f7;color:#475569;margin-right:4px;vertical-align:1px}
 .kind.link{background:var(--warnbg);color:var(--warn)}
 .tag{display:inline-block;font-size:11px;padding:0 7px;border-radius:9px;background:#e8f0fe;color:#1e4fb8;margin:0 4px 2px 0;cursor:pointer}
+#list.dragMode li{padding-left:34px}
+#list .handle{position:absolute;left:0;top:0;bottom:0;width:30px;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:15px;letter-spacing:-3px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+#list li.divider{background:#eef2f7;color:#334155;font-weight:700;font-size:13px;padding-top:7px;padding-bottom:7px;border-top:2px solid #cbd5e1;cursor:pointer;min-height:34px}
+#list li.divider .dvT{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#list li.ph{background:var(--accent2);border:2px dashed #9db8f5;padding:0}
+#list li.dragging{background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.25);opacity:.95;cursor:grabbing}
+.listTools .row select{flex:1}
+.tagEd .tagSel{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;min-height:22px;align-items:center}
+.tagChip{display:inline-flex;align-items:center;background:#e8f0fe;color:#1e4fb8;border-radius:12px;padding:1px 2px 1px 9px;font-size:12px}
+.tagChip button{border:none;background:transparent;padding:0 6px;color:#1e4fb8;font-size:15px;line-height:1.2}
+.tagSug{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;max-height:132px;overflow:auto}
+.tagOpt{padding:3px 10px;font-size:12px;border-radius:12px}
+.tagOpt small{color:var(--sub);margin-left:2px}
+.tagOpt.new{border-color:#9db8f5;color:var(--accent)}
+.rd .tagRow{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
+.rd .tagRow button{margin-left:4px}
+.tagTbl{width:100%;border-collapse:collapse;font-size:13px}
+.tagTbl td{padding:6px 4px;border-bottom:1px solid var(--line2)}
+.tagTbl td.n{color:var(--sub);white-space:nowrap;width:4em}
+.tagTbl td.b{text-align:right;white-space:nowrap}
+.tagTbl td.b button{margin-left:4px}
+.tagTbl td.tn{word-break:break-all}
 .emptyMsg{padding:24px 16px;color:var(--sub);line-height:1.7;font-size:13px}
 
 .rd{max-width:800px;margin:0 auto;padding:18px 18px 80px;background:var(--panel);min-height:100%}
@@ -150,12 +172,18 @@ a{color:var(--accent)}
       <input id="q" type="search" placeholder="検索（タイトル・本文・URL・メモ／#タグ）">
       <div class="row">
         <select id="fSite"><option value="">すべてのサイト</option></select>
+        <select id="fTag"><option value="">すべてのタグ</option></select>
+      </div>
+      <div class="row">
         <select id="fSort">
           <option value="new">保存日（新しい順）</option>
           <option value="old">保存日（古い順）</option>
           <option value="title">タイトル順</option>
           <option value="site">サイト順</option>
+          <option value="manual">手動（並べ替え・仕切り）</option>
         </select>
+        <button id="btnDivider" class="sm" hidden>＋ 仕切り</button>
+        <button id="btnTags" class="sm">タグ管理</button>
       </div>
       <div class="count" id="count"></div>
     </div>
@@ -171,15 +199,16 @@ a{color:var(--accent)}
 
 <script>
 'use strict';
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 /* 保存データ（IndexedDB "webclip"）
    clips  : { id, kind, url, canonical, title, site, author, published, excerpt, image,
-              text, chars, images, tags[], memo, createdAt, updatedAt }
-   bodies : { id, html }   … 本文（サニタイズ済み HTML）
+              text, chars, images, tags[], memo, createdAt, updatedAt, order }
+            kind = 'divider' は一覧の仕切り（title が表示文字）。order は手動並べ替えの順（小さいほど上、v1.2）
+   bodies : { id, html }   … 本文（サニタイズ済み HTML）。保存した画像は data:image/…;base64 で埋め込む（v1.2）
    バックアップ JSON : { app:'WebClip', format:1, version, exportedAt, clips:[{...clip, html}] } */
 const DB_NAME = 'webclip', DB_VER = 1, BACKUP_FORMAT = 1;
-const LS_FS = 'webclip.fontSize', LS_BACKUP = 'webclip.lastBackup';
-const KIND_LABEL = { article:'本文', page:'ページ全体', selection:'選択範囲', paste:'貼り付け', link:'リンクのみ' };
+const LS_FS = 'webclip.fontSize', LS_BACKUP = 'webclip.lastBackup', LS_SORT = 'webclip.sort';
+const KIND_LABEL = { article:'本文', page:'ページ全体', selection:'選択範囲', paste:'貼り付け', link:'リンクのみ', divider:'仕切り' };
 
 /*BM-START*/
 /* ブックマークレット本体。表示中のページの中で実行される。
@@ -313,8 +342,42 @@ function WC_BM(APP, VER) {
   var md = se ? 'selection' : 'article';
   function el() { return md === 'selection' ? se : md === 'page' ? pg : art; }
   function ttl(x) { var h = x && x.querySelector('h1'); return mt('meta[property="og:title"]') || (h ? h.textContent.replace(/\s+/g, ' ').trim() : '') || D.title || ''; }
+  var IR = {}, IP = {}, sv = null, im = null;
+  function b64(bl) { return new Promise(function (res) { var f = new FileReader(); f.onload = function () { res(String(f.result || '')); }; f.onerror = function () { res(''); }; f.readAsDataURL(bl); }); }
+  function shrink(bl) {
+    if (bl.size <= 300000 && /^image\/(png|jpeg|gif|webp)$/.test(bl.type)) { return b64(bl); }
+    if (!W.createImageBitmap) { return Promise.resolve(''); }
+    return createImageBitmap(bl).then(function (bm) {
+      var s = Math.min(1, 1600 / Math.max(bm.width, bm.height)), c = D.createElement('canvas'), g;
+      c.width = Math.max(1, Math.round(bm.width * s)); c.height = Math.max(1, Math.round(bm.height * s));
+      g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bm, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.85);
+    });
+  }
+  function get1(u) {
+    if (IP[u]) { return IP[u]; }
+    var ct = W.AbortController ? new AbortController() : null, so = false, tm = setTimeout(function () { if (ct) { ct.abort(); } }, 15000);
+    try { so = new URL(u).origin === location.origin; } catch (x) {}
+    IP[u] = fetch(u, { credentials: so ? 'same-origin' : 'omit', signal: ct ? ct.signal : undefined }).then(function (r) { if (!r.ok) { throw new Error('http'); } return r.blob(); }).then(shrink).then(function (d) { return /^data:image\/(png|jpeg|gif|webp);base64,/.test(d) ? d : ''; }, function () { return ''; }).then(function (d) { clearTimeout(tm); IR[u] = d; return d; });
+    return IP[u];
+  }
+  function srcs(x) { var a = x.querySelectorAll('img'), r = [], k, u; for (k = 0; k < a.length && r.length < 80; k++) { u = a[k].getAttribute('src') || ''; if (/^https?:/.test(u) && r.indexOf(u) < 0) { r.push(u); } } return r; }
+  function ist() { var us = srcs(el()), n = 0, ok = 0, k; for (k = 0; k < us.length; k++) { if (us[k] in IR) { n++; if (IR[us[k]]) { ok++; } } } return { all: us.length, done: n, ok: ok }; }
+  function imgUp() {
+    var s = ist(), b = sv.checked && s.done < s.all;
+    im.textContent = !sv.checked ? '（URL で参照）' : !s.all ? '（画像なし）' : b ? '取得中… ' + s.done + '/' + s.all : s.ok + '/' + s.all + '枚を保存';
+    cb.disabled = b; st(cb, { opacity: b ? '.5' : '1' });
+    return b;
+  }
+  function ens() { if (!sv.checked) { return Promise.resolve(); } return Promise.all(srcs(el()).map(function (u) { return get1(u).then(imgUp); })); }
   function pay() {
-    var x = el(), o = { wc: 1, v: VER, mode: md, title: ttl(x), html: x.innerHTML, clippedAt: new Date().toISOString() }, k;
+    var x = el(), h = x.innerHTML, o, k, a, cx, u;
+    if (sv.checked) {
+      cx = x.cloneNode(true); a = cx.querySelectorAll('img');
+      for (k = 0; k < a.length; k++) { u = a[k].getAttribute('src'); if (IR[u]) { a[k].setAttribute('src', IR[u]); } }
+      h = cx.innerHTML;
+    }
+    o = { wc: 1, v: VER, mode: md, title: ttl(x), html: h, clippedAt: new Date().toISOString() };
     for (k in info) { o[k] = info[k]; }
     return o;
   }
@@ -338,6 +401,11 @@ function WC_BM(APP, VER) {
   var pv = mk('div', { color: '#475569', 'font-size': '12px', 'max-height': '4.5em', overflow: 'hidden', margin: '4px 0 8px', 'word-break': 'break-all' });
   var r2 = mk('div', { display: 'flex', 'flex-wrap': 'wrap', gap: '6px', 'align-items': 'center' }), cb = bt('コピー', 1), sb = APP ? bt('アプリへ送る') : null;
   var msg = mk('div', { 'font-size': '12px', color: '#15803d', 'margin-top': '6px', 'min-height': '1em' });
+  var r3 = mk('label', { display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '12px', color: '#475569', margin: '0 0 8px', cursor: 'pointer' });
+  sv = mk('input', { margin: '0', width: '16px', height: '16px' }); sv.type = 'checkbox'; sv.checked = true;
+  im = mk('span', { color: '#5d6b7e' });
+  r3.appendChild(sv); r3.appendChild(mk('span', null, '画像も保存')); r3.appendChild(im);
+  sv.onchange = function () { ens(); imgUp(); };
   r2.appendChild(cb); if (sb) { r2.appendChild(sb); }
   var ol = root.style.getPropertyValue('outline'), op = root.style.getPropertyPriority('outline');
   function hl(on) { if (root === B) { return; } if (on) { root.style.setProperty('outline', '3px solid rgba(37,99,235,.7)', 'important'); } else { root.style.setProperty('outline', ol, op); } }
@@ -349,6 +417,7 @@ function WC_BM(APP, VER) {
     pv.textContent = t.slice(0, 160);
     for (k in mb) { st(mb[k], { background: k === md ? '#dbe7ff' : '#fff', 'border-color': k === md ? '#9db8f5' : '#d9dee6' }); }
     hl(md === 'article'); say('');
+    ens(); imgUp();
   }
   function kd(ev) { if (ev.key === 'Escape') { cls(); } }
   function cls() { hl(false); H.remove(); D.removeEventListener('keydown', kd, true); }
@@ -364,22 +433,28 @@ function WC_BM(APP, VER) {
     return Promise.resolve(fb());
   }
   xb.onclick = cls;
-  cb.onclick = function () { cp('WEBCLIP:v1\n' + JSON.stringify(pay())).then(function (ok) { say(ok ? 'コピーしました。WebClip の「取込」に貼り付けてください' : 'コピーできませんでした', !ok); }); };
+  cb.onclick = function () {
+    if (imgUp()) { return; }
+    var t = 'WEBCLIP:v1\n' + JSON.stringify(pay()), kb = Math.round(t.length / 1024);
+    cp(t).then(function (ok) { say(ok ? 'コピーしました（約' + (kb >= 1024 ? (kb / 1024).toFixed(1) + 'MB' : kb + 'KB') + '）。WebClip の「取込」に貼り付けてください' : 'コピーできませんでした', !ok); });
+  };
   if (sb) {
     sb.onclick = function () {
-      var t = pay(), id = String(Date.now()) + Math.random().toString(36).slice(2), w = W.open(APP + '#receive', 'webclip_app'), n = 0, dn = false, org;
+      var id = String(Date.now()) + Math.random().toString(36).slice(2), w = W.open(APP + '#receive', 'webclip_app'), n = 0, dn = false, org;
       if (!w) { say('新しいタブを開けませんでした。「コピー」して貼り付けてください', 1); return; }
       try { org = new URL(APP).origin; } catch (x) { org = '*'; }
       say('送信中…');
+      ens().then(function () { var t = pay();
       function om(ev) { if (ev.data && ev.data.webclipAck === id) { dn = true; W.removeEventListener('message', om); say('アプリへ送りました'); } }
       W.addEventListener('message', om);
       var iv = setInterval(function () {
         if (dn || ++n > 60) { clearInterval(iv); if (!dn) { W.removeEventListener('message', om); say('送信できませんでした。「コピー」して貼り付けてください', 1); } return; }
         try { w.postMessage({ webclip: 1, id: id, data: t }, org); } catch (x) {}
       }, 500);
+      });
     };
   }
-  P.appendChild(r1); P.appendChild(tt); P.appendChild(inf); P.appendChild(pv); P.appendChild(r2); P.appendChild(msg);
+  P.appendChild(r1); P.appendChild(tt); P.appendChild(inf); P.appendChild(pv); P.appendChild(r3); P.appendChild(r2); P.appendChild(msg);
   R.appendChild(P); D.documentElement.appendChild(H);
   D.addEventListener('keydown', kd, true);
   up();
@@ -425,7 +500,7 @@ function sanitizeHtml(html, base) {
           if (a === 'href') { v = safeUrl(v, false, base); if (!v) continue; }
           else if (a === 'src') { v = safeUrl(v, true, base); if (!v) continue; }
           else if (/^(width|height|colspan|rowspan|start)$/.test(a)) { if (!/^\d{1,4}$/.test(v.trim())) continue; v = v.trim(); }
-          el.setAttribute(a, v.slice(0, 2000));
+          el.setAttribute(a, a === 'src' ? v : v.slice(0, 2000));
         }
         if (tag === 'img' && !el.getAttribute('src')) continue;
         walk(n, el);
@@ -694,6 +769,44 @@ function draftFromShare(title, text, url) {
   return buildDraft({ kind: 'link', url, title });
 }
 
+/* ---------- 画像の保存（data URL として本文に埋め込む） ---------- */
+function imageStats(html) {
+  const imgs = Array.from(parseBody(html).querySelectorAll('img'));
+  const saved = imgs.filter(i => /^data:/.test(i.getAttribute('src') || '')).length;
+  return { total: imgs.length, saved, remote: imgs.length - saved };
+}
+function blobToDataUrl(bl) { return new Promise(res => { const f = new FileReader(); f.onload = () => res(String(f.result || '')); f.onerror = () => res(''); f.readAsDataURL(bl); }); }
+/* 300KB 以下の png/jpeg/gif/webp はそのまま。それ以外は長辺 1600px 以内の JPEG（品質 0.85）にする */
+async function shrinkImage(bl) {
+  if (bl.size <= 300000 && /^image\/(png|jpeg|gif|webp)$/.test(bl.type)) return blobToDataUrl(bl);
+  const bm = await createImageBitmap(bl);
+  const s = Math.min(1, 1600 / Math.max(bm.width, bm.height)), c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bm.width * s)); c.height = Math.max(1, Math.round(bm.height * s));
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bm, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.85);
+}
+async function fetchImageData(u) {
+  try {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 15000);
+    const r = await fetch(u, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', signal: ctl.signal });
+    clearTimeout(t);
+    if (!r.ok) return '';
+    const d = await shrinkImage(await r.blob());
+    return /^data:image\/(png|jpeg|gif|webp);base64,/.test(d) ? d : '';
+  } catch (e) { return ''; }
+}
+/* 本文中の URL 参照の画像をアプリから取得して埋め込む。他サイトの画像は、そのサイトが CORS を許可している場合だけ取れる */
+async function embedImages(html, onProgress) {
+  const b = parseBody(html);
+  const imgs = Array.from(b.querySelectorAll('img')).filter(i => /^https?:/.test(i.getAttribute('src') || ''));
+  const urls = Array.from(new Set(imgs.map(i => i.getAttribute('src'))));
+  const got = new Map(); let done = 0;
+  await Promise.all(urls.map(async u => { got.set(u, await fetchImageData(u)); done++; if (onProgress) onProgress(done, urls.length); }));
+  for (const i of imgs) { const d = got.get(i.getAttribute('src')); if (d) i.setAttribute('src', d); }
+  return { html: b.innerHTML, ok: Array.from(got.values()).filter(Boolean).length, total: urls.length };
+}
+function fmtBytes(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB'; }
+
 /* ---------- 汎用 ---------- */
 function escHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch])); }
 function fmtDate(iso, withTime = true) {
@@ -741,6 +854,13 @@ function dbPutMeta(meta) {
   if (memMode) { mem.clips.set(meta.id, meta); return Promise.resolve(); }
   const t = db.transaction('clips', 'readwrite'); t.objectStore('clips').put(meta); return txDone(t);
 }
+function dbPutMetaMany(metas) {
+  if (!metas.length) return Promise.resolve();
+  if (memMode) { for (const m of metas) mem.clips.set(m.id, m); return Promise.resolve(); }
+  const t = db.transaction('clips', 'readwrite');
+  for (const m of metas) t.objectStore('clips').put(m);
+  return txDone(t);
+}
 function dbDelete(id) {
   if (memMode) { mem.clips.delete(id); mem.bodies.delete(id); return Promise.resolve(); }
   const t = db.transaction(['clips', 'bodies'], 'readwrite');
@@ -752,8 +872,26 @@ function dbDelete(id) {
 let clips = [], currentId = null, pending = null, pushedReader = false, persistAsked = false;
 const hayCache = new WeakMap();
 const $ = s => document.querySelector(s);
-const META_KEYS = ['id','kind','url','canonical','title','site','author','published','excerpt','image','text','chars','images','tags','memo','createdAt','updatedAt'];
+const META_KEYS = ['id','kind','url','canonical','title','site','author','published','excerpt','image','text','chars','images','tags','memo','createdAt','updatedAt','order'];
 function pickMeta(o) { const m = {}; for (const k of META_KEYS) m[k] = o[k]; m.tags = Array.isArray(m.tags) ? m.tags : []; m.memo = m.memo || ''; return m; }
+const isDivider = c => c.kind === 'divider';
+function realClips() { return clips.filter(c => !isDivider(c)); }
+function hasOrder(c) { return typeof c.order === 'number' && isFinite(c.order); }
+function topOrder() { const o = clips.filter(hasOrder).map(c => c.order); return o.length ? Math.min(...o) - 1 : 0; }
+/* order が無い記事（v1.1 以前のデータ・古いバックアップ）に、保存日の新しい順で番号を付ける */
+async function ensureOrder() {
+  const miss = clips.filter(c => !hasOrder(c));
+  if (!miss.length) return;
+  let base = clips.filter(hasOrder).reduce((m, c) => Math.max(m, c.order), -1) + 1;
+  miss.sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt)));
+  for (const c of miss) c.order = base++;
+  try { await dbPutMetaMany(miss.map(pickMeta)); } catch (e) {}
+}
+function allTags() {
+  const m = new Map();
+  for (const c of realClips()) for (const t of c.tags || []) m.set(t, (m.get(t) || 0) + 1);
+  return Array.from(m.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja'));
+}
 
 function toast(msg, ms = 2600) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
@@ -782,7 +920,7 @@ function findDup(url, canonical, exceptId) {
 }
 
 /* ---------- モーダル ---------- */
-function openModal(html) { $('#modal').innerHTML = html; $('#modalWrap').hidden = false; $('#modalWrap').scrollTop = 0; return $('#modal'); }
+function openModal(html) { $('#modal').onclick = null; $('#modal').innerHTML = html; $('#modalWrap').hidden = false; $('#modalWrap').scrollTop = 0; return $('#modal'); }
 function closeModal() { $('#modalWrap').hidden = true; $('#modal').innerHTML = ''; pending = null; }
 function choose(message, buttons) {
   return new Promise(res => {
@@ -794,17 +932,144 @@ function choose(message, buttons) {
   });
 }
 
+function askText(message, initial, okLabel) {
+  return new Promise(res => {
+    const d = $('#dlg');
+    d.innerHTML = '<p style="white-space:pre-wrap;line-height:1.6;margin:0 0 6px">' + escHtml(message) + '</p><input type="text" id="askIn">' +
+      '<div class="modalBtns"><button data-v="0">キャンセル</button><button data-v="1" class="primary">' + escHtml(okLabel || 'OK') + '</button></div>';
+    const inp = d.querySelector('#askIn'); inp.value = initial || '';
+    $('#dlgWrap').hidden = false; setTimeout(() => { inp.focus(); inp.select(); }, 30);
+    const fin = v => { $('#dlgWrap').hidden = true; res(v); };
+    d.querySelectorAll('button').forEach(b => b.onclick = () => fin(b.dataset.v === '1' ? inp.value : null));
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); fin(inp.value); } });
+  });
+}
+
+/* ---------- タグ入力（チップ＋過去のタグから選択） ---------- */
+function mountTagEditor(box, initial, idPrefix) {
+  let tags = Array.from(new Set(initial || []));
+  const all = allTags();
+  box.innerHTML = '<div class="tagEd"><div class="tagSel"></div>' +
+    '<div class="fldRow"><input type="text" id="' + idPrefix + 'TagIn" placeholder="タグを入力して Enter（候補から選んでも可）" enterkeyhint="done" autocomplete="off">' +
+    '<button type="button" class="sm" data-add="1">追加</button></div><div class="tagSug"></div></div>';
+  const sel = box.querySelector('.tagSel'), inp = box.querySelector('input'), sug = box.querySelector('.tagSug');
+  function render() {
+    sel.innerHTML = tags.length ? tags.map(t => '<span class="tagChip">#' + escHtml(t) + '<button type="button" data-rm="' + escHtml(t) + '" title="外す">×</button></span>').join('')
+      : '<span class="note">タグなし</span>';
+    const q = inp.value.trim().replace(/^#/, '').toLowerCase();
+    const cand = all.filter(([t]) => !tags.includes(t) && (!q || t.toLowerCase().includes(q))).slice(0, 40);
+    const nw = parseTags(inp.value).filter(t => !tags.includes(t) && !all.some(([x]) => x === t));
+    sug.innerHTML = (nw.length ? '<button type="button" class="tagOpt new" data-new="1">＋ 新しいタグ「' + escHtml(nw.join(' ')) + '」</button>' : '') +
+      cand.map(([t, n]) => '<button type="button" class="tagOpt" data-tag="' + escHtml(t) + '">#' + escHtml(t) + ' <small>' + n + '</small></button>').join('') ||
+      (all.length ? '' : '<span class="note">過去のタグはまだありません。入力して Enter で追加します。</span>');
+  }
+  function add(list) { for (const t of list) if (!tags.includes(t)) tags.push(t); inp.value = ''; render(); }
+  box.addEventListener('click', e => {
+    const rm = e.target.closest('[data-rm]');
+    if (rm) { tags = tags.filter(t => t !== rm.dataset.rm); render(); return; }
+    const o = e.target.closest('.tagOpt');
+    if (o) { add(o.dataset.new ? parseTags(inp.value) : [o.dataset.tag]); return; }
+    if (e.target.closest('[data-add]')) add(parseTags(inp.value));
+  });
+  inp.addEventListener('input', render);
+  inp.addEventListener('keydown', e => {
+    if (e.isComposing || e.keyCode === 229) return;   // 日本語変換中の Enter は無視
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(parseTags(inp.value)); }
+    else if (e.key === 'Backspace' && !inp.value && tags.length) { tags.pop(); render(); }
+  });
+  render();
+  return { get: () => Array.from(new Set([...tags, ...parseTags(inp.value)])) };
+}
+
+/* ---------- タグ管理（全記事の名前変更・統合・削除） ---------- */
+async function updateTags(match, fn) {
+  const changed = [], now = new Date().toISOString();
+  clips = clips.map(c => {
+    if (isDivider(c) || !match(c)) return c;
+    const nc = pickMeta(Object.assign({}, c, { tags: Array.from(new Set(fn(c.tags || []))), updatedAt: now }));
+    changed.push(nc); return nc;
+  });
+  await dbPutMetaMany(changed);
+  renderTagFilter(); renderList();
+  if (currentId && clips.some(c => c.id === currentId)) openClip(currentId, false);
+  return changed.length;
+}
+function openTagManager() {
+  const tg = allTags();
+  const m = openModal('<h2>タグ管理</h2>' +
+    '<p class="note">名前を変えると、そのタグが付いたすべての記事が変わります。既にあるタグと同じ名前にすると、2つのタグを1つにまとめます。</p>' +
+    (tg.length ? '<table class="tagTbl">' + tg.map(([t, n]) => '<tr><td class="tn">#' + escHtml(t) + '</td><td class="n">' + n + '件</td><td class="b">' +
+      '<button class="sm" data-ren="' + escHtml(t) + '">名前を変更</button><button class="sm danger" data-del="' + escHtml(t) + '">削除</button></td></tr>').join('') + '</table>'
+      : '<p class="note">タグはまだありません。</p>') +
+    '<div class="modalBtns"><button id="tmClose">閉じる</button></div>');
+  m.querySelector('#tmClose').onclick = closeModal;
+  m.onclick = async e => {
+    const r = e.target.closest('[data-ren]'), d = e.target.closest('[data-del]');
+    if (r) {
+      const old = r.dataset.ren;
+      const v = await askText('タグ「' + old + '」の新しい名前', old, '変更');
+      if (v == null) return;
+      const nt = parseTags(v)[0];
+      if (!nt || nt === old) return;
+      const merge = tg.some(([t]) => t === nt);
+      const n = await updateTags(c => c.tags.includes(old), ts => ts.map(t => t === old ? nt : t));
+      if ($('#fTag').value === old) { $('#fTag').value = nt; renderList(); }
+      toast((merge ? '「' + nt + '」にまとめました' : '名前を変更しました') + '（' + n + '件）');
+      openTagManager();
+    } else if (d) {
+      const old = d.dataset.del;
+      const ok = await choose('タグ「' + old + '」をすべての記事から外します。記事は削除されません。', [{ v: false, label: 'キャンセル' }, { v: true, label: '削除', cls: 'primary' }]);
+      if (!ok) return;
+      const n = await updateTags(c => c.tags.includes(old), ts => ts.filter(t => t !== old));
+      toast('タグを外しました（' + n + '件）');
+      openTagManager();
+    }
+  };
+}
+
+/* ---------- 仕切り ---------- */
+function openDivider(c) {
+  const m = openModal('<h2>' + (c ? '仕切りの編集' : '仕切りの追加') + '</h2>' +
+    '<label class="fld"><span>表示する文字（空欄なら線だけ）</span><input type="text" id="dvText" placeholder="例：構造設計の資料"></label>' +
+    (c ? '' : '<p class="note">一覧のいちばん上に追加します。左のつまみ（⋮⋮）をドラッグして好きな位置へ動かしてください。</p>') +
+    '<div class="modalBtns">' + (c ? '<button id="dvDel" class="danger" style="margin-right:auto">削除</button>' : '') +
+    '<button id="dvCancel">キャンセル</button><button id="dvSave" class="primary">保存</button></div>');
+  const inp = m.querySelector('#dvText'); inp.value = c ? c.title : '';
+  setTimeout(() => inp.focus(), 30);
+  const save = async () => {
+    const now = new Date().toISOString();
+    const meta = c ? pickMeta(Object.assign({}, c, { title: inp.value.trim(), updatedAt: now }))
+      : pickMeta({ id: uid(), kind: 'divider', title: inp.value.trim(), url: '', text: '', chars: 0, images: 0, tags: [], memo: '', createdAt: now, updatedAt: now, order: topOrder() });
+    await dbPutMany([{ meta, html: '' }]);
+    clips = clips.filter(x => x.id !== meta.id).concat([meta]);
+    closeModal(); renderList();
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); save(); } });
+  m.querySelector('#dvSave').onclick = save;
+  m.querySelector('#dvCancel').onclick = closeModal;
+  if (c) m.querySelector('#dvDel').onclick = async () => {
+    const ok = await choose('この仕切りを削除します。記事は削除されません。', [{ v: false, label: 'キャンセル' }, { v: true, label: '削除', cls: 'primary' }]);
+    if (!ok) return;
+    await dbDelete(c.id); clips = clips.filter(x => x.id !== c.id); closeModal(); renderList();
+  };
+}
+
 /* ---------- 一覧 ---------- */
 function hay(c) {
   let h = hayCache.get(c);
   if (!h) { h = [c.title, c.url, c.site, c.memo, (c.tags || []).join(' '), c.author, c.text].join('\n').toLowerCase(); hayCache.set(c, h); }
   return h;
 }
-function filteredClips() {
+function isFiltering() { return !!($('#q').value.trim() || $('#fSite').value || $('#fTag').value); }
+function isDragMode() { return $('#fSort').value === 'manual' && !isFiltering(); }
+/* withDividers：手動並べ替えで絞り込みなしのときに仕切りも返す */
+function filteredClips(withDividers = true) {
   const toks = $('#q').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const site = $('#fSite').value;
+  const site = $('#fSite').value, tag = $('#fTag').value;
   const a = clips.filter(c => {
+    if (isDivider(c)) return false;
     if (site && siteKey(c) !== site) return false;
+    if (tag && !(c.tags || []).includes(tag)) return false;
     for (const t of toks) {
       if (t.startsWith('#') && t.length > 1) { if (!(c.tags || []).some(g => g.toLowerCase() === t.slice(1))) return false; }
       else if (!hay(c).includes(t)) return false;
@@ -813,6 +1078,8 @@ function filteredClips() {
   });
   const s = $('#fSort').value;
   const cmpTitle = (x, y) => String(x.title).localeCompare(String(y.title), 'ja');
+  const cmpOrder = (x, y) => ((hasOrder(x) ? x.order : 0) - (hasOrder(y) ? y.order : 0)) || String(y.createdAt).localeCompare(String(x.createdAt));
+  if (s === 'manual') return (withDividers && !isFiltering() ? clips.slice() : a).sort(cmpOrder);
   if (s === 'old') a.sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt)));
   else if (s === 'title') a.sort(cmpTitle);
   else if (s === 'site') a.sort((x, y) => siteKey(x).localeCompare(siteKey(y)) || String(y.createdAt).localeCompare(String(x.createdAt)));
@@ -821,18 +1088,29 @@ function filteredClips() {
 }
 function renderSites() {
   const sel = $('#fSite'), cur = sel.value, cnt = new Map();
-  for (const c of clips) { const k = siteKey(c); cnt.set(k, (cnt.get(k) || 0) + 1); }
+  for (const c of realClips()) { const k = siteKey(c); cnt.set(k, (cnt.get(k) || 0) + 1); }
   const keys = Array.from(cnt.keys()).sort();
-  sel.innerHTML = '<option value="">すべてのサイト（' + clips.length + '）</option>' +
+  sel.innerHTML = '<option value="">すべてのサイト（' + realClips().length + '）</option>' +
     keys.map(k => '<option value="' + escHtml(k) + '">' + escHtml(k) + '（' + cnt.get(k) + '）</option>').join('');
   sel.value = keys.includes(cur) ? cur : '';
 }
+function renderTagFilter() {
+  const sel = $('#fTag'), cur = sel.value, tg = allTags();
+  sel.innerHTML = '<option value="">すべてのタグ</option>' + tg.map(([t, n]) => '<option value="' + escHtml(t) + '">#' + escHtml(t) + '（' + n + '）</option>').join('');
+  sel.value = tg.some(([t]) => t === cur) ? cur : '';
+}
 function renderList() {
-  const a = filteredClips();
-  $('#count').textContent = a.length === clips.length ? clips.length + ' 件' : a.length + ' / ' + clips.length + ' 件';
+  const a = filteredClips(), total = realClips().length, n = a.filter(c => !isDivider(c)).length;
+  const manual = $('#fSort').value === 'manual', drag = isDragMode();
+  $('#count').textContent = (n === total ? total + ' 件' : n + ' / ' + total + ' 件') + (manual && !drag ? '（絞り込み中は並べ替え・仕切りを表示しません）' : '');
+  $('#btnDivider').hidden = !manual;
+  $('#btnDivider').disabled = !drag;
+  $('#list').classList.toggle('dragMode', drag);
+  const handle = drag ? '<span class="handle" title="ドラッグで並べ替え">⋮⋮</span>' : '';
   $('#list').innerHTML = a.map(c => {
+    if (isDivider(c)) return '<li data-id="' + c.id + '" class="divider">' + handle + '<span class="dvT">' + escHtml(c.title) + '</span></li>';
     const meta = [escHtml(c.site || siteKey(c)), fmtDate(c.createdAt, false), c.kind === 'link' ? '' : '約' + (c.chars || 0).toLocaleString() + '字'].filter(Boolean).join(' · ');
-    return '<li data-id="' + c.id + '" class="' + (c.id === currentId ? 'on' : '') + '">' +
+    return '<li data-id="' + c.id + '" class="' + (c.id === currentId ? 'on' : '') + '">' + handle +
       '<div class="t">' + (c.kind === 'link' ? '<span class="kind link">リンク</span>' : '') + escHtml(c.title) + '</div>' +
       '<div class="m">' + meta + '</div>' +
       ((c.tags || []).length ? '<div class="tg">' + c.tags.map(t => '<span class="tag" data-tag="' + escHtml(t) + '">#' + escHtml(t) + '</span>').join('') + '</div>' : '') +
@@ -840,8 +1118,8 @@ function renderList() {
       '</li>';
   }).join('');
   const em = $('#empty');
-  if (!clips.length) { em.hidden = false; em.innerHTML = 'まだ保存した記事はありません。<br>「＋ 取込」から貼り付けるか、「ブックマークレット」を登録して使ってください。'; }
-  else if (!a.length) { em.hidden = false; em.textContent = '条件に合う記事はありません。'; }
+  if (!total) { em.hidden = false; em.innerHTML = 'まだ保存した記事はありません。<br>「＋ 取込」から貼り付けるか、「ブックマークレット」を登録して使ってください。'; }
+  else if (!n) { em.hidden = false; em.textContent = '条件に合う記事はありません。'; }
   else em.hidden = true;
 }
 
@@ -866,8 +1144,9 @@ async function openClip(id, push = true) {
   let html = '';
   try { html = await dbGetBody(id); } catch (e) { toast('本文を読み込めませんでした'); }
   if (currentId !== id) return;
-  const hasUrl = isHttpUrl(c.url);
-  const meta = [c.site || siteKey(c), c.author, c.published ? '公開 ' + fmtDate(c.published, false) : ''].filter(Boolean).map(escHtml).join(' · ');
+  const hasUrl = isHttpUrl(c.url), ist = imageStats(html);
+  const meta = [c.site || siteKey(c), c.author, c.published ? '公開 ' + fmtDate(c.published, false) : '',
+    ist.total ? '画像 ' + ist.total + '枚（端末に保存 ' + ist.saved + '・URL 参照 ' + ist.remote + '）' : ''].filter(Boolean).map(escHtml).join(' · ');
   $('#reader').innerHTML = '<article class="rd">' +
     '<div class="kindRow"><span class="kind' + (c.kind === 'link' ? ' link' : '') + '">' + escHtml(KIND_LABEL[c.kind] || c.kind) + '</span>保存 ' + fmtDate(c.createdAt) +
       (c.updatedAt && c.updatedAt !== c.createdAt ? '（更新 ' + fmtDate(c.updatedAt) + '）' : '') + '</div>' +
@@ -875,9 +1154,10 @@ async function openClip(id, push = true) {
     (meta ? '<div class="metaRow">' + meta + '</div>' : '') +
     '<div class="linkRow">' + (hasUrl ? '<a class="url" href="' + escHtml(c.url) + '" target="_blank" rel="noopener noreferrer">' + escHtml(c.url) + '</a>' : '<span class="note">URL が登録されていません（「編集」で追加できます）</span>') +
       '<div class="lbtns">' + (hasUrl ? '<button class="sm" data-act="open">元ページを開く</button><button class="sm" data-act="copyurl">リンクをコピー</button><button class="sm" data-act="copymdlink">Markdownリンクをコピー</button>' : '') + '</div></div>' +
-    ((c.tags || []).length ? '<div>' + c.tags.map(t => '<span class="tag" data-tag="' + escHtml(t) + '">#' + escHtml(t) + '</span>').join('') + '</div>' : '') +
+    '<div class="tagRow">' + (c.tags || []).map(t => '<span class="tag" data-tag="' + escHtml(t) + '">#' + escHtml(t) + '</span>').join('') +
+      '<button class="sm" data-act="edit">' + ((c.tags || []).length ? 'タグ編集' : '＋ タグ') + '</button></div>' +
     (c.memo ? '<div class="memo">' + escHtml(c.memo) + '</div>' : '') +
-    '<div class="actRow"><button data-act="edit">編集</button><button data-act="copymd">Markdownをコピー</button><button data-act="md">.md 保存</button><button data-act="html">.html 保存</button><button data-act="del" class="danger">削除</button></div>' +
+    '<div class="actRow">' + (ist.remote ? '<button data-act="embed">画像を端末に保存（' + ist.remote + '枚）</button>' : '') + '<button data-act="edit">編集</button><button data-act="copymd">Markdownをコピー</button><button data-act="md">.md 保存</button><button data-act="html">.html 保存</button><button data-act="del" class="danger">削除</button></div>' +
     '<div class="fsRow">文字サイズ <button class="sm" data-act="fs-">A−</button><button class="sm" data-act="fs+">A＋</button></div>' +
     '<hr class="sep"><div class="body" id="rdBody"></div></article>';
   const body = $('#rdBody');
@@ -911,11 +1191,23 @@ async function readerAction(act) {
     if (!ok) return;
     await dbDelete(c.id);
     clips = clips.filter(x => x.id !== c.id);
-    currentId = null; renderSites(); renderList(); renderWelcome();
+    currentId = null; renderSites(); renderTagFilter(); renderList(); renderWelcome();
     if (isNarrow()) closeReader();
     toast('削除しました'); return;
   }
   const html = await dbGetBody(c.id);
+  if (act === 'embed') {
+    toast('画像を取得しています…', 60000);
+    const r = await embedImages(html, (d, n) => toast('画像を取得しています… ' + d + '/' + n, 60000));
+    if (r.ok) {
+      const meta = pickMeta(Object.assign({}, c, { images: imageStats(r.html).total, updatedAt: new Date().toISOString() }));
+      try { await dbPutMany([{ meta, html: r.html }]); } catch (e) { toast('保存できませんでした：' + (e && e.message || e), 5000); return; }
+      clips = clips.map(x => x.id === c.id ? meta : x);
+      openClip(c.id, false);
+    }
+    toast(r.ok + ' / ' + r.total + ' 枚を保存しました' + (r.ok < r.total ? '（残りはサイトの制限で取得できません。ブックマークレットで取り込み直すと取れる場合があります）' : ''), 6000);
+    return;
+  }
   if (act === 'copymd') { toast(await copyText(clipToMarkdown(c, html)) ? 'Markdown をコピーしました' : 'コピーできませんでした'); return; }
   if (act === 'md') { download(safeName(c.title) + '.md', clipToMarkdown(c, html), 'text/markdown;charset=utf-8'); return; }
   if (act === 'html') { download(safeName(c.title) + '.html', clipToHtml(c, html), 'text/html;charset=utf-8'); return; }
@@ -928,13 +1220,14 @@ function openEdit(c) {
   const m = openModal('<h2>編集</h2>' +
     '<label class="fld"><span>タイトル</span><input type="text" id="eTitle"></label>' +
     '<label class="fld"><span>URL</span><input type="url" id="eUrl" placeholder="https://..."></label>' +
-    '<div class="grid2"><label class="fld"><span>サイト名</span><input type="text" id="eSite"></label>' +
-    '<label class="fld"><span>タグ（スペース・カンマ区切り）</span><input type="text" id="eTags"></label></div>' +
+    '<label class="fld"><span>サイト名</span><input type="text" id="eSite"></label>' +
+    '<div class="fld"><span>タグ</span><div id="eTagBox"></div></div>' +
     '<label class="fld"><span>メモ</span><textarea id="eMemo" rows="4"></textarea></label>' +
     '<div id="eWarn"></div>' +
     '<div class="modalBtns"><button id="eCancel">キャンセル</button><button id="eSave" class="primary">保存</button></div>');
   m.querySelector('#eTitle').value = c.title; m.querySelector('#eUrl').value = c.url || '';
-  m.querySelector('#eSite').value = c.site || ''; m.querySelector('#eTags').value = (c.tags || []).join(' ');
+  m.querySelector('#eSite').value = c.site || '';
+  const tagEd = mountTagEditor(m.querySelector('#eTagBox'), c.tags, 'e');
   m.querySelector('#eMemo').value = c.memo || '';
   const warn = () => {
     const u = m.querySelector('#eUrl').value.trim();
@@ -950,13 +1243,13 @@ function openEdit(c) {
     const nc = pickMeta(Object.assign({}, c, {
       title: m.querySelector('#eTitle').value.trim() || c.title,
       url: u, site: m.querySelector('#eSite').value.trim() || hostOf(u),
-      tags: parseTags(m.querySelector('#eTags').value), memo: m.querySelector('#eMemo').value,
+      tags: tagEd.get(), memo: m.querySelector('#eMemo').value,
       updatedAt: new Date().toISOString(),
     }));
     if (u !== c.url) nc.canonical = '';
     await dbPutMeta(nc);
     clips = clips.map(x => x.id === c.id ? nc : x);
-    closeModal(); renderSites(); renderList(); openClip(nc.id, false);
+    closeModal(); renderSites(); renderTagFilter(); renderList(); openClip(nc.id, false);
     toast('保存しました');
   };
 }
@@ -983,7 +1276,7 @@ function openImport() {
   m.querySelector('#btnReadClip').onclick = readClipboard;
   m.querySelector('#iCancel').onclick = closeModal;
   m.querySelector('#iSave').onclick = savePending;
-  if (!isNarrow()) setTimeout(() => box.focus(), 50);
+  if (!isNarrow()) setTimeout(() => { if (!pending && (!document.activeElement || document.activeElement === document.body)) box.focus(); }, 50);
   return m;
 }
 async function readClipboard() {
@@ -1001,11 +1294,14 @@ async function readClipboard() {
   } catch (e) {}
   toast('クリップボードを読み取れませんでした。貼り付け欄に貼り付けてください', 4000);
 }
+const OLD_BM_MSG = 'ブックマークレットが古い版です。登録し直すと画像も保存できるようになります';
+function oldBookmarklet(p) { const v = String(p && p.v || '0').split('.').map(Number); return (v[0] || 0) < 1 || ((v[0] || 0) === 1 && (v[1] || 0) < 2); }
 function applyPaste(html, text) {
   const r = interpretPaste(html, text);
   if (r.type === 'error') { toast(r.message, 4000); return; }
+  if (r.type === 'payload') { const m = String(text).match(/^\s*WEBCLIP:v1\s*([\s\S]*)$/); try { if (oldBookmarklet(JSON.parse(m[1]))) toast(OLD_BM_MSG, 5000); } catch (e) {} }
   if (r.type === 'url') {
-    if (pending && pending.kind !== 'link' && !pending.url) { pending.url = r.url; pending.site = pending.site || hostOf(r.url); renderPending(); toast('URL を設定しました'); return; }
+    if (pending && pending.kind !== 'link' && !pending.url) { syncPendingFromForm(); if (pending.url) return; pending.url = r.url; pending.site = pending.site || hostOf(r.url); renderPending(); toast('URL を設定しました'); return; }
     pending = buildDraft({ kind: 'link', url: r.url, title: '' });
     pending.title = r.url;
   } else {
@@ -1015,24 +1311,45 @@ function applyPaste(html, text) {
   }
   renderPending();
 }
+let pendingTagEd = null;
+/* 確認画面の入力内容を下書きへ戻す（再描画の前に呼ぶ） */
+function syncPendingFromForm() {
+  const m = $('#modal');
+  if (!pending || !m.querySelector('#pTitle')) return;
+  pending.title = m.querySelector('#pTitle').value; pending.url = m.querySelector('#pUrl').value.trim();
+  pending.site = m.querySelector('#pSite').value; pending.memo = m.querySelector('#pMemo').value;
+  if (pendingTagEd) pending.tags = pendingTagEd.get();
+}
 function renderPending() {
   const m = $('#modal'), pv = m.querySelector('#pv');
   if (!pv) return;
   const d = pending;
   if (!d) { pv.innerHTML = ''; m.querySelector('#iSave').disabled = true; return; }
+  const ist = d.kind === 'link' ? null : imageStats(d.html);
   const info = d.kind === 'link' ? 'リンクのみ（本文なし）'
-    : (KIND_LABEL[d.kind] || d.kind) + '・約' + d.chars.toLocaleString() + '字・画像' + d.images + '枚';
+    : (KIND_LABEL[d.kind] || d.kind) + '・約' + d.chars.toLocaleString() + '字・画像' + ist.total + '枚' +
+      (ist.total ? '（端末に保存 ' + ist.saved + '・URL 参照 ' + ist.remote + '）' : '') + '・約' + fmtBytes(d.html.length);
   pv.innerHTML = '<h3>内容の確認</h3>' +
-    '<div class="infoBox">' + escHtml(info) + '</div>' +
+    '<div class="infoBox">' + escHtml(info) + (ist && ist.remote ? ' <button class="sm" id="pEmbed">残りの画像を取得</button>' : '') + '</div>' +
     '<label class="fld"><span>タイトル</span><input type="text" id="pTitle"></label>' +
     '<label class="fld"><span>URL' + (d.kind === 'paste' ? '（貼り付けでは自動で入らないので、必要なら入力してください）' : '') + '</span><input type="url" id="pUrl" placeholder="https://..."></label>' +
     '<div id="pWarn"></div>' +
-    '<div class="grid2"><label class="fld"><span>サイト名</span><input type="text" id="pSite"></label>' +
-    '<label class="fld"><span>タグ（スペース・カンマ区切り）</span><input type="text" id="pTags"></label></div>' +
+    '<label class="fld"><span>サイト名</span><input type="text" id="pSite"></label>' +
+    '<div class="fld"><span>タグ</span><div id="pTagBox"></div></div>' +
     '<label class="fld"><span>メモ</span><textarea id="pMemo" rows="2"></textarea></label>' +
     (d.kind === 'link' ? '' : '<div class="pvBody" id="pvBody"></div>');
   pv.querySelector('#pTitle').value = d.title; pv.querySelector('#pUrl').value = d.url;
-  pv.querySelector('#pSite').value = d.site; pv.querySelector('#pTags').value = (d.tags || []).join(' ');
+  pv.querySelector('#pSite').value = d.site;
+  pendingTagEd = mountTagEditor(pv.querySelector('#pTagBox'), d.tags, 'p');
+  if (pv.querySelector('#pEmbed')) pv.querySelector('#pEmbed').onclick = async e => {
+    const b = e.target; b.disabled = true;
+    const r = await embedImages(d.html, (k, n) => { b.textContent = '取得中… ' + k + '/' + n; });
+    if (pending !== d) return;
+    syncPendingFromForm();
+    d.html = r.html; d.images = imageStats(r.html).total;
+    renderPending();
+    toast(r.ok + ' / ' + r.total + ' 枚を取得しました' + (r.ok < r.total ? '（残りはサイトの制限で取得できません）' : ''), 4000);
+  };
   pv.querySelector('#pMemo').value = d.memo || '';
   if (d.kind !== 'link') {
     const b = pv.querySelector('#pvBody');
@@ -1059,27 +1376,27 @@ async function savePending() {
   if (url && !isHttpUrl(url)) { toast('URL の形式を確認してください'); return; }
   if (d.kind === 'link' && !url) { toast('リンクのみの保存には URL が必要です'); return; }
   const now = new Date().toISOString();
-  let id = uid(), createdAt = now, tags = parseTags(m.querySelector('#pTags').value), memo = m.querySelector('#pMemo').value;
+  let id = uid(), createdAt = now, tags = pendingTagEd ? pendingTagEd.get() : [], memo = m.querySelector('#pMemo').value, order = topOrder();
   const dup = url ? findDup(url, d.canonical) : null;
   if (dup) {
     const ans = await choose('同じ URL の記事が保存されています。\n「' + dup.title + '」（' + fmtDate(dup.createdAt, false) + '）', [
       { v: 'cancel', label: 'キャンセル' }, { v: 'new', label: '別の記事として保存' }, { v: 'over', label: '上書き', cls: 'primary' }]);
     if (ans === 'cancel') return;
     if (ans === 'over') {
-      id = dup.id; createdAt = dup.createdAt;
+      id = dup.id; createdAt = dup.createdAt; if (hasOrder(dup)) order = dup.order;
       tags = Array.from(new Set([...(dup.tags || []), ...tags]));
       memo = memo || dup.memo || '';
     }
   }
   const meta = pickMeta(Object.assign({}, d, {
     id, url, title: m.querySelector('#pTitle').value.trim() || d.title, site: m.querySelector('#pSite').value.trim() || hostOf(url),
-    tags, memo, createdAt, updatedAt: now,
+    tags, memo, createdAt, updatedAt: now, order, images: imageStats(d.html).total,
   }));
   try { await dbPutMany([{ meta, html: d.html }]); }
   catch (e) { toast('保存できませんでした：' + (e && e.message || e), 5000); return; }
   clips = clips.filter(x => x.id !== id).concat([meta]);
   if (!persistAsked) { persistAsked = true; try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {} }
-  closeModal(); renderSites(); renderList(); openClip(id);
+  closeModal(); renderSites(); renderTagFilter(); renderList(); openClip(id);
   toast(dup && id === dup.id ? '上書きしました' : '保存しました');
 }
 
@@ -1148,18 +1465,18 @@ async function openBackup() {
   try { if (navigator.storage && navigator.storage.persisted) persisted = (await navigator.storage.persisted()) ? '保護あり' : '保護なし（ブラウザが容量不足時などに削除する可能性あり）'; } catch (e) {}
   const lb = getLastBackup();
   const m = openModal('<h2>バックアップ</h2>' +
-    '<div class="kv"><b>保存件数</b>' + clips.length + ' 件<br><b>最終書き出し</b>' + (lb ? fmtDate(lb) : 'まだありません') +
+    '<div class="kv"><b>保存件数</b>' + realClips().length + ' 件<br><b>最終書き出し</b>' + (lb ? fmtDate(lb) : 'まだありません') +
     (est ? '<br><b>使用容量</b>' + est : '') + (persisted ? '<br><b>保存領域</b>' + persisted : '') + (memMode ? '<br><b>注意</b><span style="color:var(--ng)">保存領域が使えないため、画面を閉じると消えます</span>' : '') + '</div>' +
     '<h3>全件</h3><div class="fldRow" style="flex-wrap:wrap"><button id="bExport" class="primary">JSON 書き出し</button><button id="bImport">JSON 読み込み</button></div>' +
     '<p class="note">読み込みは追加・統合です。同じ記事（同じ ID）は更新日時が新しいほうを残します。</p>' +
     '<h3>リンク一覧</h3><div class="fldRow" style="flex-wrap:wrap"><button id="bLinksMd">.md で保存</button><button id="bLinksCopy">コピー</button></div>' +
-    '<p class="note">一覧で絞り込んでいる場合は、表示中の記事だけを書き出します（' + filteredClips().length + ' 件）。サイトごとにまとめた Markdown です。</p>' +
+    '<p class="note">一覧で絞り込んでいる場合は、表示中の記事だけを書き出します（' + filteredClips(false).length + ' 件）。サイトごとにまとめた Markdown です。</p>' +
     '<p class="note">iPad・iPhone の Safari では、ホーム画面に追加していないサイトのデータが、しばらく使わないと消えることがあります。定期的な書き出しをおすすめします。</p>' +
     '<div class="modalBtns"><button id="bClose">閉じる</button></div>');
   m.querySelector('#bExport').onclick = exportJson;
   m.querySelector('#bImport').onclick = () => $('#fileIn').click();
-  m.querySelector('#bLinksMd').onclick = () => download('WebClip_links_' + new Date().toISOString().slice(0, 10) + '.md', linksMarkdown(filteredClips()), 'text/markdown;charset=utf-8');
-  m.querySelector('#bLinksCopy').onclick = async () => toast(await copyText(linksMarkdown(filteredClips())) ? 'リンク一覧をコピーしました' : 'コピーできませんでした');
+  m.querySelector('#bLinksMd').onclick = () => download('WebClip_links_' + new Date().toISOString().slice(0, 10) + '.md', linksMarkdown(filteredClips(false)), 'text/markdown;charset=utf-8');
+  m.querySelector('#bLinksCopy').onclick = async () => toast(await copyText(linksMarkdown(filteredClips(false))) ? 'リンク一覧をコピーしました' : 'コピーできませんでした');
   m.querySelector('#bClose').onclick = closeModal;
 }
 async function exportJson() {
@@ -1169,7 +1486,7 @@ async function exportJson() {
   const d = new Date(), p = n => String(n).padStart(2, '0');
   download('WebClip_' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()) + '.json', JSON.stringify(data, null, 1), 'application/json');
   try { localStorage.setItem(LS_BACKUP, data.exportedAt); } catch (e) {}
-  toast(out.length + ' 件を書き出しました');
+  toast(out.filter(c => !isDivider(c)).length + ' 件を書き出しました');
   if (!$('#modalWrap').hidden && $('#bExport')) openBackup();
 }
 async function importJson(file) {
@@ -1188,6 +1505,8 @@ async function importJson(file) {
     meta.title = String(meta.title || url || '無題'); meta.url = url;
     meta.createdAt = meta.createdAt || new Date().toISOString(); meta.updatedAt = meta.updatedAt || meta.createdAt;
     meta.tags = Array.isArray(raw.tags) ? raw.tags.map(String) : [];
+    if (meta.order != null && !(typeof meta.order === 'number' && isFinite(meta.order))) delete meta.order;
+    if (meta.kind === 'divider') { meta.url = ''; meta.title = String(raw.title || ''); }
     if (typeof meta.text !== 'string') { meta.text = htmlToText(html); meta.chars = meta.text.replace(/\s/g, '').length; }
     const ex = byId.get(meta.id);
     if (ex && String(ex.updatedAt) >= String(meta.updatedAt)) { skip++; continue; }
@@ -1196,7 +1515,8 @@ async function importJson(file) {
   }
   try { await dbPutMany(items); } catch (e) { toast('読み込みに失敗しました：' + (e && e.message || e), 5000); return; }
   clips = Array.from(byId.values());
-  renderSites(); renderList();
+  await ensureOrder();
+  renderSites(); renderTagFilter(); renderList();
   closeModal();
   toast('追加 ' + add + ' 件・更新 ' + upd + ' 件・変更なし ' + skip + ' 件', 4000);
 }
@@ -1215,7 +1535,7 @@ window.addEventListener('message', async e => {
   openImport();
   pending = draftFromPayload(m.data);
   renderPending();
-  toast('ブックマークレットから受け取りました。確認して保存してください', 3500);
+  toast(oldBookmarklet(m.data) ? OLD_BM_MSG : 'ブックマークレットから受け取りました。確認して保存してください', 5000);
 });
 
 /* ---------- イベント ---------- */
@@ -1226,9 +1546,14 @@ $('#btnBack').onclick = closeReader;
 $('#fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importJson(f); };
 $('#q').addEventListener('input', renderList);
 $('#fSite').addEventListener('change', renderList);
-$('#fSort').addEventListener('change', renderList);
+$('#fTag').addEventListener('change', renderList);
+$('#fSort').addEventListener('change', () => { try { localStorage.setItem(LS_SORT, $('#fSort').value); } catch (e) {} renderList(); });
+$('#btnDivider').onclick = () => openDivider(null);
+$('#btnTags').onclick = openTagManager;
 $('#list').addEventListener('click', e => {
-  if (e.target.closest('a.ext')) return;
+  if (e.target.closest('a.ext') || e.target.closest('.handle')) return;
+  const dv = e.target.closest('li.divider');
+  if (dv) { const c = clips.find(x => x.id === dv.dataset.id); if (c) openDivider(c); return; }
   const tg = e.target.closest('.tag');
   if (tg) { e.stopPropagation(); $('#q').value = '#' + tg.dataset.tag; renderList(); return; }
   const li = e.target.closest('li[data-id]');
@@ -1255,13 +1580,68 @@ document.addEventListener('paste', e => {   // 一覧画面で Ctrl+V したと�
   applyPaste(cd.getData('text/html'), cd.getData('text/plain'));
 });
 
+/* ---------- ドラッグで並べ替え（手動・絞り込みなしのとき） ---------- */
+let drag = null;
+$('#list').addEventListener('pointerdown', e => {
+  const h = e.target.closest('.handle');
+  if (!h || drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const li = h.closest('li');
+  e.preventDefault();
+  const r = li.getBoundingClientRect();
+  const ph = document.createElement('li'); ph.className = 'ph'; ph.style.height = r.height + 'px';
+  li.after(ph);
+  Object.assign(li.style, { position: 'fixed', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', zIndex: 40 });
+  li.classList.add('dragging');
+  drag = { li, ph, dy: e.clientY - r.top, y: e.clientY, pid: e.pointerId, timer: setInterval(dragAutoScroll, 30) };
+  try { h.setPointerCapture(e.pointerId); } catch (x) {}
+});
+function dragPlace() {
+  const list = $('#list'); let before = null;
+  for (const el of list.children) {
+    if (el === drag.li || el === drag.ph) continue;
+    const r = el.getBoundingClientRect();
+    if (drag.y < r.top + r.height / 2) { before = el; break; }
+  }
+  if (before) { if (drag.ph.nextSibling !== before) list.insertBefore(drag.ph, before); }
+  else if (list.lastElementChild !== drag.ph) list.appendChild(drag.ph);
+}
+function dragAutoScroll() {
+  if (!drag) return;
+  const p = $('#listPane'), r = p.getBoundingClientRect(), top = r.top + $('.listTools').offsetHeight;
+  const d = drag.y < top + 40 ? -12 : drag.y > r.bottom - 40 ? 12 : 0;
+  if (d) { p.scrollTop += d; dragPlace(); }
+}
+document.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.pid) return;
+  e.preventDefault();
+  drag.y = e.clientY; drag.li.style.top = (e.clientY - drag.dy) + 'px';
+  dragPlace();
+}, { passive: false });
+async function dragEnd(e) {
+  if (!drag || (e && e.pointerId !== drag.pid)) return;
+  const { li, ph, timer } = drag; drag = null; clearInterval(timer);
+  li.removeAttribute('style'); li.classList.remove('dragging'); ph.replaceWith(li);
+  const ids = Array.from($('#list').children).map(x => x.dataset.id).filter(Boolean);
+  const byId = new Map(clips.map(c => [c.id, c])), changed = [];
+  ids.forEach((id, i) => { const c = byId.get(id); if (c && c.order !== i) { const nc = pickMeta(Object.assign({}, c, { order: i })); changed.push(nc); byId.set(id, nc); } });
+  if (changed.length) {
+    clips = clips.map(c => byId.get(c.id) || c);
+    try { await dbPutMetaMany(changed); } catch (x) { toast('並べ替えを保存できませんでした'); }
+  }
+  renderList();
+}
+document.addEventListener('pointerup', dragEnd);
+document.addEventListener('pointercancel', dragEnd);
+
 /* ---------- 起動 ---------- */
 ready = (async function init() {
   $('#ver').textContent = 'v' + APP_VERSION;
   setFs(getFs());
   try { db = await idbOpen(); } catch (e) { memMode = true; toast('この環境では保存領域を使えません。データは画面を閉じると消えます', 6000); }
   try { clips = (await dbGetAll()).map(pickMeta); } catch (e) { clips = []; }
-  renderSites(); renderList(); renderWelcome();
+  await ensureOrder();
+  try { const so = localStorage.getItem(LS_SORT); if (so && Array.from($('#fSort').options).some(o => o.value === so)) $('#fSort').value = so; } catch (e) {}
+  renderSites(); renderTagFilter(); renderList(); renderWelcome();
   if (location.hash === '#receive') {
     history.replaceState(null, '', location.pathname + location.search);
     if (!receivedIds.size) toast('ブックマークレットからの受信を待っています…', 3000);

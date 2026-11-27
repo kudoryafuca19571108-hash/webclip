@@ -11,9 +11,10 @@ const { chromium } = require('playwright');
 
 const ROOT = path.join(__dirname, '..');
 const FIX = path.join(__dirname, 'fixtures');
-const APP_PORT = 8765, SITE_PORT = 8766;
+const APP_PORT = 8765, SITE_PORT = 8766, IMG_PORT = 8768;
 const APP = `http://127.0.0.1:${APP_PORT}/WebClip.html`;
 const SITE = `http://127.0.0.1:${SITE_PORT}`;
+const IMGS = `http://127.0.0.1:${IMG_PORT}`;   // 別オリジンの画像サーバー（/cors/… は CORS 許可、/nocors/… は不許可）
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -21,14 +22,15 @@ function ok(name, cond, extra) {
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${!cond && extra !== undefined ? '  → ' + String(extra).slice(0, 300) : ''}`);
 }
 
-function serve(dir, port, headers) {
+function serve(dir, port, headersOf) {
   const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.gif': 'image/gif', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
   const srv = http.createServer((req, res) => {
+    const headers = typeof headersOf === 'function' ? headersOf(req.url) : headersOf;
     let p = path.join(dir, decodeURIComponent(new URL(req.url, 'http://x').pathname));
     if (p.startsWith(dir) && fs.existsSync(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');   // GitHub Pages と同じくディレクトリは index.html
     if (!p.startsWith(dir) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) {
       // 画像は存在しなくても 1x1 GIF を返す
-      if (/\.(png|gif)$/.test(p)) { res.writeHead(200, Object.assign({ 'Content-Type': 'image/gif' }, headers)); res.end(Buffer.from('R0lGODlhAQABAAAAACw=', 'base64')); return; }
+      if (/\.(png|gif)$/.test(p)) { res.writeHead(200, Object.assign({ 'Content-Type': 'image/gif' }, headers)); res.end(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')); return; }
       res.writeHead(404); res.end('not found'); return;
     }
     res.writeHead(200, Object.assign({ 'Content-Type': types[path.extname(p)] || 'application/octet-stream' }, headers));
@@ -43,6 +45,21 @@ async function bookmarkletSource(page) {
   await page.click('#bmClose');
   return { href, code: decodeURIComponent(href.replace(/^javascript:/, '')) };
 }
+// 別オリジンの画像サーバー
+function serveImages(port, bigPng) {
+  const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+  const srv = http.createServer((req, res) => {
+    const u = new URL(req.url, 'http://x').pathname, cors = u.startsWith('/cors/') ? { 'Access-Control-Allow-Origin': '*' } : {};
+    if (u.endsWith('/big.png')) { res.writeHead(200, Object.assign({ 'Content-Type': 'image/png' }, cors)); res.end(bigPng); return; }
+    res.writeHead(200, Object.assign({ 'Content-Type': 'image/gif' }, cors)); res.end(gif);
+  });
+  return new Promise(r => srv.listen(port, '127.0.0.1', () => r(srv)));
+}
+// パネルの画像取得が終わるまで待つ
+const waitImages = page => page.waitForFunction(() => { const t = document.getElementById('__webclip').shadowRoot.textContent; return !t.includes('取得中'); }, null, { timeout: 30000 });
+// タグ入力欄に入力して Enter
+async function addTag(page, sel, tag) { await page.fill(sel, tag); await page.press(sel, 'Enter'); }
+const chips = (page, box) => page.$$eval(box + ' .tagChip', l => l.map(x => x.textContent.replace(/×$/, '')));
 // ブックマークレットのパネル（shadow DOM）のボタンを押す
 async function clickPanel(page, label) {
   await page.evaluate(l => {
@@ -63,13 +80,24 @@ async function pasteInto(page, sel, data) {
 
 (async () => {
   const s1 = await serve(ROOT, APP_PORT, {});
-  const s2 = await serve(FIX, SITE_PORT, { 'Content-Security-Policy': "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:" });
+  // CSP は article.html だけに付ける（blog.html は CSP なし：別オリジンの画像取得を試す）
+  const s2 = await serve(FIX, SITE_PORT, u => /article\.html/.test(u) ? { 'Content-Security-Policy': "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:" } : {});
   // 日本語のダウンロードファイル名を扱うため UTF-8 ロケールで起動する（LANG 未設定だと Chromium が "download" に置き換える）
   const browser = await chromium.launch({ env: Object.assign({}, process.env, { LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' }) });
   const ctx = await browser.newContext({ acceptDownloads: true });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://127.0.0.1:${APP_PORT}` });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: SITE });
   const errors = [];
+  // 300KB を超える PNG（雑音入り 2000×1500）を作る：ブックマークレットで縮小・JPEG 化されるか確かめる
+  const gen = await ctx.newPage();
+  const bigPng = Buffer.from(await gen.evaluate(() => {
+    const c = document.createElement('canvas'); c.width = 2000; c.height = 1500;
+    const g = c.getContext('2d'), d = g.createImageData(2000, 1500);
+    for (let i = 0; i < d.data.length; i++) d.data[i] = (i % 4 === 3) ? 255 : (Math.random() * 255) | 0;
+    g.putImageData(d, 0, 0); return c.toDataURL('image/png').split(',')[1];
+  }), 'base64');
+  await gen.close();
+  const s3 = await serveImages(IMG_PORT, bigPng);
   const app = await ctx.newPage();
   app.on('pageerror', e => errors.push('app: ' + e.message));
   await app.goto(APP);
@@ -79,7 +107,7 @@ async function pasteInto(page, sel, data) {
   const bm = await bookmarkletSource(app);
   ok('1a ブックマークレットが javascript: で始まる', bm.href.startsWith('javascript:'));
   ok('1b アプリの URL が埋め込まれている', bm.code.includes(JSON.stringify(APP)));
-  ok('1c サイズが 16KB 未満', bm.href.length < 16000, bm.href.length);
+  ok('1c サイズが 20KB 未満', bm.href.length < 20000, bm.href.length);
   console.log(`      （ブックマークレット ${bm.href.length} 文字）`);
   let syntaxOk = true; try { new Function(bm.code); } catch (e) { syntaxOk = false; }
   ok('1d コードの構文が正しい', syntaxOk);
@@ -103,7 +131,9 @@ async function pasteInto(page, sel, data) {
   const leftover = await site.evaluate(() => document.querySelectorAll('[data-wch],[data-wcs]').length);
   ok('2e 元ページに作業用の属性が残らない', leftover === 0, leftover);
 
-  // コピー
+  // コピー（画像の取得が終わるまでコピーボタンは押せない）
+  await waitImages(site);
+  ok('2e2 画像の取得状況を表示', (await panelText(site)).includes('1/1枚を保存'), await panelText(site));
   await clickPanel(site, 'コピー');
   await site.waitForFunction(() => document.getElementById('__webclip').shadowRoot.textContent.includes('コピーしました'));
   const clip = await site.evaluate(() => navigator.clipboard.readText());
@@ -114,7 +144,7 @@ async function pasteInto(page, sel, data) {
   ok('2i 見出し・表・コード・引用を含む', /<h2/.test(pay.html) && /<table/.test(pay.html) && /<pre/.test(pay.html) && /<blockquote/.test(pay.html));
   for (const [k, w] of [['SIDEBAR_TEXT', 'サイドバー'], ['FOOTER_TEXT', 'フッター'], ['HIDDEN_TEXT', '非表示要素'], ['SCRIPT_TEXT', 'script'], ['COMMENT_TEXT', 'コメント欄'], ['Xで共有', '共有ボタン'], ['関連1', '関連記事'], ['このサイトについて', 'ナビ']])
     ok(`2j ${w}を含まない`, !pay.html.includes(k));
-  ok('2k 遅延読み込み画像は data-src の絶対 URL', pay.html.includes(`src="${SITE}/img/fig1.png"`), (pay.html.match(/<img[^>]*>/g) || []).join(' '));
+  ok('2k 遅延読み込み画像（data-src）を取得して埋め込み', /<img[^>]*src="data:image\/gif;base64,[^"]+"[^>]*alt="定着の図"|<img[^>]*alt="定着の図"[^>]*src="data:image\/gif;base64,/.test(pay.html), (pay.html.match(/<img[^>]*>/g) || []).join(' ').slice(0, 300));
   ok('2l 1x1 の計測用画像は除く', !pay.html.includes('pixel.gif'));
   ok('2m 相対リンクを絶対 URL に', pay.html.includes(`href="${SITE}/glossary/teichaku"`));
   ok('2n iframe はリンクに置換', pay.html.includes('[埋め込み] https://video.example/embed/123'));
@@ -123,6 +153,7 @@ async function pasteInto(page, sel, data) {
 
   // 全体モード
   await clickPanel(site, '全体');
+  await waitImages(site);
   await clickPanel(site, 'コピー');
   await site.waitForFunction(() => document.getElementById('__webclip').shadowRoot.textContent.includes('コピーしました'));
   const pagePay = JSON.parse((await site.evaluate(() => navigator.clipboard.readText())).replace(/^WEBCLIP:v1\n/, ''));
@@ -136,6 +167,7 @@ async function pasteInto(page, sel, data) {
   await site.evaluate(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector('blockquote')); getSelection().removeAllRanges(); getSelection().addRange(r); });
   await site.evaluate(bm.code);
   ok('2s 選択があると「選択」ボタンが出る', (await panelText(site)).includes('選択'));
+  await waitImages(site);
   await clickPanel(site, 'コピー');
   await site.waitForFunction(() => document.getElementById('__webclip').shadowRoot.textContent.includes('コピーしました'));
   const selPay = JSON.parse((await site.evaluate(() => navigator.clipboard.readText())).replace(/^WEBCLIP:v1\n/, ''));
@@ -149,12 +181,28 @@ async function pasteInto(page, sel, data) {
   blog.on('pageerror', e => errors.push('blog: ' + e.message));
   await blog.goto(SITE + '/blog.html');
   await blog.evaluate(bm.code);
+  await waitImages(blog);
+  ok('2v0 画像 2/4 枚を保存（同一オリジンの404・CORS 不許可は取れない）', (await panelText(blog)).includes('2/4枚を保存'), await panelText(blog));
   await clickPanel(blog, 'コピー');
   await blog.waitForFunction(() => document.getElementById('__webclip').shadowRoot.textContent.includes('コピーしました'));
   const blogPay = JSON.parse((await blog.evaluate(() => navigator.clipboard.readText())).replace(/^WEBCLIP:v1\n/, ''));
   ok('2v ブログ形式：本文の最初と最後を含む', blogPay.html.includes('BLOG_BODY_1') && blogPay.html.includes('BLOG_BODY_2'), blogPay.html.slice(0, 200));
   ok('2w ブログ形式：サイドバー・メニューを含まない', !blogPay.html.includes('SIDE_TEXT') && !blogPay.html.includes('プロフィール'), blogPay.html);
   ok('2x ブログ形式：相対パスの画像を絶対 URL に', blogPay.html.includes(`src="${SITE}/photo1.jpg"`));
+  ok('2x2 CORS 許可の小さい画像は元の形式（gif）で埋め込み', blogPay.html.includes('alt="cors-a"') && /src="data:image\/gif;base64,[^"]+" alt="cors-a"|alt="cors-a" src="data:image\/gif/.test(blogPay.html), (blogPay.html.match(/<img[^>]*>/g) || []).join(' ').slice(0, 400));
+  ok('2x3 CORS 不許可の画像は URL のまま', blogPay.html.includes(`src="${IMGS}/nocors/b.png"`));
+  const bigSrc = (blogPay.html.match(/<img[^>]*alt="big"[^>]*>/) || [''])[0].match(/src="([^"]+)"/);
+  ok('2x4 300KB を超える画像は JPEG に変換', bigSrc && bigSrc[1].startsWith('data:image/jpeg;base64,') && bigSrc[1].length < bigPng.length * 4 / 3, bigSrc && bigSrc[1].slice(0, 40));
+  const bigDim = bigSrc && await blog.evaluate(src => new Promise(r => { const i = new Image(); i.onload = () => r(i.naturalWidth + 'x' + i.naturalHeight); i.onerror = () => r('err'); i.src = src; }), bigSrc[1]);
+  ok('2x5 長辺 1600px に縮小（縦横比維持）', bigDim === '1600x1200', bigDim);
+  // 「画像も保存」を外すと URL 参照
+  await blog.evaluate(bm.code); await blog.evaluate(bm.code);   // 閉じて開き直す
+  await blog.evaluate(() => { const c = document.getElementById('__webclip').shadowRoot.querySelector('input[type=checkbox]'); c.click(); });
+  ok('2x6 チェックを外すと「URL で参照」', (await panelText(blog)).includes('URL で参照'));
+  await clickPanel(blog, 'コピー');
+  await blog.waitForFunction(() => document.getElementById('__webclip').shadowRoot.textContent.includes('コピーしました'));
+  const noImgPay = JSON.parse((await blog.evaluate(() => navigator.clipboard.readText())).replace(/^WEBCLIP:v1\n/, ''));
+  ok('2x7 URL 参照のペイロードに data URL がない', !noImgPay.html.includes('data:image') && noImgPay.html.includes(`${IMGS}/cors/a.png`));
   ok('2y ブログ形式：タイトルは document.title', blogPay.title === '週末の現場見学 - サンプルブログ', blogPay.title);
   await blog.close();
 
@@ -164,7 +212,15 @@ async function pasteInto(page, sel, data) {
   await app.waitForSelector('#pTitle');
   ok('3a 確認画面にタイトル・URL', await app.inputValue('#pTitle') === '鉄筋の定着長さについて' && await app.inputValue('#pUrl') === SITE + '/article.html');
   ok('3b 確認画面に種類・文字数', /本文・約[\d,]+字・画像1枚/.test(await app.textContent('.infoBox')), await app.textContent('.infoBox'));
-  await app.fill('#pTags', '構造 鉄筋');
+  ok('3b2 過去のタグがない場合の案内', (await app.textContent('#pTagBox')).includes('過去のタグはまだありません'));
+  await addTag(app, '#pTagIn', '構造');
+  await app.fill('#pTagIn', '鉄筋');
+  ok('3b3 未登録の文字は「新しいタグ」候補', (await app.textContent('#pTagBox .tagOpt.new')).includes('鉄筋'));
+  await app.click('#pTagBox .tagOpt.new');
+  ok('3b4 チップで表示', JSON.stringify(await chips(app, '#pTagBox')) === JSON.stringify(['#構造', '#鉄筋']), JSON.stringify(await chips(app, '#pTagBox')));
+  await addTag(app, '#pTagIn', '仮');
+  await app.click('#pTagBox [data-rm="仮"]');
+  ok('3b5 × で外せる', !(await chips(app, '#pTagBox')).includes('#仮'));
   await app.fill('#pMemo', '定着のメモ');
   await app.click('#iSave');
   await app.waitForSelector('.rd h1.ttl');
@@ -218,6 +274,12 @@ async function pasteInto(page, sel, data) {
   ok('5c 危険な属性・要素を除去', !/onclick|onerror|style=|<script|<iframe|<svg|javascript:/i.test(pvHtml), pvHtml);
   ok('5d 相対 URL の画像（src="x"）は除去、https 画像は残す', !/src="x"/.test(pvHtml) && pvHtml.includes('https://img.example/a.png'));
   ok('5e 良いリンクは残す', pvHtml.includes('https://ok.example/'));
+  const sug = await app.$$eval('#pTagBox .tagOpt', l => l.map(x => x.dataset.tag));
+  ok('5e2 過去のタグを候補に表示', sug.includes('構造') && sug.includes('鉄筋'), sug.join(','));
+  await app.fill('#pTagIn', '鉄');
+  ok('5e3 入力で候補を絞り込み', JSON.stringify(await app.$$eval('#pTagBox .tagOpt:not(.new)', l => l.map(x => x.dataset.tag))) === '["鉄筋"]');
+  await app.click('#pTagBox .tagOpt[data-tag="鉄筋"]');
+  ok('5e4 候補をタップで追加・入力欄は空に', JSON.stringify(await chips(app, '#pTagBox')) === '["#鉄筋"]' && await app.inputValue('#pTagIn') === '');
   // URL を貼ると URL 欄に入る
   await pasteInto(app, '#pasteBox', { 'text/plain': 'https://news.example.com/article/1' });
   ok('5f 貼り付け記事の後で URL を貼ると URL 欄に入る', await app.inputValue('#pUrl') === 'https://news.example.com/article/1');
@@ -241,7 +303,7 @@ async function pasteInto(page, sel, data) {
   // ---- 7. 一覧の検索・絞り込み ----
   const listCount = () => app.$$eval('#list li', l => l.length);
   await app.fill('#q', '付着応力度'); ok('7a 本文で検索', await listCount() === 1);
-  await app.fill('#q', '#鉄筋'); ok('7b タグで検索', await listCount() === 1);
+  await app.fill('#q', '#鉄筋'); ok('7b タグで検索（候補から選んだタグ・URL を後から貼っても保持）', await listCount() === 2);
   await app.fill('#q', 'example.org'); ok('7c URL で検索', await listCount() === 1);
   await app.fill('#q', '');
   const sites = await app.$$eval('#fSite option', o => o.map(x => x.value));
@@ -282,7 +344,8 @@ async function pasteInto(page, sel, data) {
   // 編集
   await app.click('[data-act="edit"]');
   await app.fill('#eTitle', '鉄筋の定着長さ（編集）');
-  await app.fill('#eTags', '構造 鉄筋 配筋');
+  ok('8e0 編集画面に現在のタグ', JSON.stringify(await chips(app, '#eTagBox')) === '["#構造","#鉄筋"]', JSON.stringify(await chips(app, '#eTagBox')));
+  await addTag(app, '#eTagIn', '配筋');
   await app.click('#eSave');
   await app.waitForSelector('.rd h1.ttl:text("鉄筋の定着長さ（編集）")');
   ok('8e 編集が反映', (await app.textContent('#list')).includes('#配筋'));
@@ -402,10 +465,97 @@ async function pasteInto(page, sel, data) {
     (await pw.textContent('#pvBody')).includes('かぶり厚さは重要'));
   await ctx4.close();
 
+  // ---- 12. 画像の保存（アプリ側） ----
+  await app.reload();
+  await app.waitForFunction(() => document.querySelectorAll('#list li').length === 3);
+  await app.click('#btnImport');
+  await pasteInto(app, '#pasteBox', { 'text/html': `<h1>画像テスト</h1><p>本文</p><img src="${IMGS}/cors/x.png" alt="x"><img src="${IMGS}/nocors/y.png" alt="y">`, 'text/plain': '画像テスト' });
+  await app.waitForSelector('#pEmbed');
+  ok('12a 確認画面に画像の状況', (await app.textContent('.infoBox')).includes('端末に保存 0・URL 参照 2'));
+  await app.fill('#pTitle', '画像テスト（編集済み）');
+  await app.click('#pEmbed');
+  await app.waitForFunction(() => document.querySelector('.infoBox').textContent.includes('端末に保存 1'));
+  ok('12b 「残りの画像を取得」で CORS 許可の画像だけ取得', (await app.textContent('.infoBox')).includes('端末に保存 1・URL 参照 1'));
+  ok('12c 取得後も入力中のタイトルを保持', await app.inputValue('#pTitle') === '画像テスト（編集済み）');
+  await app.click('#iSave');
+  await app.waitForSelector('.rd h1.ttl:text("画像テスト（編集済み）")');
+  ok('12d 閲覧画面に画像の状況と保存ボタン', (await app.textContent('.rd .metaRow')).includes('端末に保存 1・URL 参照 1') && await app.isVisible('[data-act="embed"]'));
+  const e12 = await app.$eval('#rdBody img[alt="x"]', async i => { i.loading = 'eager'; if (!i.complete) await new Promise(r => { i.onload = r; i.onerror = r; }); return i.src.slice(0, 22) + ' ' + i.naturalWidth; });
+  ok('12e 閲覧画面で埋め込み画像を表示', e12 === 'data:image/gif;base64, 1', e12);
+
+  // ---- 13. タグ管理・タグで絞り込み ----
+  const tagOpts = () => app.$$eval('#fTag option', l => l.map(x => x.value).filter(Boolean));
+  ok('13a タグの絞り込み欄', JSON.stringify((await tagOpts()).sort()) === JSON.stringify(['構造', '配筋', '鉄筋'].sort()), JSON.stringify(await tagOpts()));
+  await app.selectOption('#fTag', '鉄筋');
+  ok('13b タグで絞り込み', await app.$$eval('#list li', l => l.length) === 2, JSON.stringify(await app.$$eval('#list li', l => l.map(x => x.textContent))));
+  await app.selectOption('#fTag', '');
+  await app.click('#btnTags');
+  await app.click('[data-ren="配筋"]');
+  await app.fill('#askIn', '鉄筋');
+  await app.click('#dlg button:text("変更")');
+  await app.waitForFunction(() => !document.querySelector('[data-ren="配筋"]'));
+  ok('13c 既存のタグ名に変更すると統合', JSON.stringify((await tagOpts()).sort()) === JSON.stringify(['構造', '鉄筋'].sort()));
+  await app.click('[data-del="構造"]');
+  await app.click('#dlg button:text("削除")');
+  await app.waitForFunction(() => !document.querySelector('[data-del="構造"]'));
+  ok('13d タグを削除（記事は残る）', JSON.stringify(await tagOpts()) === '["鉄筋"]' && await app.$$eval('#list li', l => l.length) === 4);
+  await app.click('#tmClose');
+  await app.reload();
+  await app.waitForFunction(() => document.querySelectorAll('#list li').length === 4);
+  ok('13e タグの変更が保存されている', JSON.stringify(await tagOpts()) === '["鉄筋"]');
+
+  // ---- 14. 手動並べ替え・仕切り ----
+  const titles = () => app.$$eval('#list li', l => l.map(x => x.classList.contains('divider') ? '[' + x.textContent.replace('⋮⋮', '') + ']' : x.querySelector('.t').textContent.replace(/^リンク/, '')));
+  await app.selectOption('#fSort', 'manual');
+  ok('14a 手動：新しく保存した順に上から（既存データに番号付け）', JSON.stringify(await titles()) === JSON.stringify(['画像テスト（編集済み）', '参考リンク', '貼り付け記事', '鉄筋の定着長さ（編集）']), JSON.stringify(await titles()));
+  ok('14b 並べ替えつまみと「＋ 仕切り」を表示', await app.$$eval('#list .handle', l => l.length) === 4 && await app.isVisible('#btnDivider'));
+  await app.click('#btnDivider');
+  await app.fill('#dvText', '構造の資料');
+  await app.press('#dvText', 'Enter');
+  await app.waitForSelector('#list li.divider');
+  ok('14c 仕切りを一番上に追加', (await titles())[0] === '[構造の資料]');
+  // 仕切りを「貼り付け記事」と「鉄筋の定着長さ」の間へドラッグ
+  const dragTo = async (fromIdx, toIdx) => {
+    const h = await app.$$('#list .handle'), lis = await app.$$('#list li');
+    const a = await h[fromIdx].boundingBox(), b = await lis[toIdx].boundingBox();
+    await app.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await app.mouse.down();
+    const ty = b.y + 4;
+    for (let k = 1; k <= 10; k++) await app.mouse.move(a.x + a.width / 2, a.y + a.height / 2 + (ty - a.y - a.height / 2) * k / 10);
+    await app.mouse.up();
+    await app.waitForFunction(() => !document.querySelector('#list li.ph'));
+    await app.waitForTimeout(300);   // 並び順の保存（IndexedDB）が終わるのを待つ
+  };
+  await dragTo(0, 4);
+  ok('14d ドラッグで仕切りを移動', JSON.stringify(await titles()) === JSON.stringify(['画像テスト（編集済み）', '参考リンク', '貼り付け記事', '[構造の資料]', '鉄筋の定着長さ（編集）']), JSON.stringify(await titles()));
+  await dragTo(4, 0);
+  ok('14e ドラッグで記事を一番上へ', (await titles())[0] === '鉄筋の定着長さ（編集）', JSON.stringify(await titles()));
+  await app.reload();
+  await app.waitForFunction(() => document.querySelectorAll('#list li').length === 5);
+  ok('14f 再読み込み後も並び順・仕切り・並べ替え方法を保持', JSON.stringify(await titles()) === JSON.stringify(['鉄筋の定着長さ（編集）', '画像テスト（編集済み）', '参考リンク', '貼り付け記事', '[構造の資料]']) && await app.inputValue('#fSort') === 'manual', JSON.stringify(await titles()));
+  await app.click('#list li.divider');
+  await app.fill('#dvText', '構造の資料（2026）');
+  await app.click('#dvSave');
+  await app.waitForFunction(() => document.querySelector('#list').textContent.includes('構造の資料（2026）'));
+  ok('14g 仕切りの文字を編集', (await titles())[4] === '[構造の資料（2026）]');
+  await app.fill('#q', '鉄筋');
+  ok('14h 絞り込み中は仕切り・つまみを出さない', await app.$$eval('#list li.divider, #list .handle', l => l.length) === 0 && (await app.textContent('#count')).includes('並べ替え'));
+  await app.fill('#q', '');
+  ok('14i 件数に仕切りを含めない', (await app.textContent('#count')).startsWith('4 件'));
+  await app.click('#btnBackup');
+  const [dl2] = await Promise.all([app.waitForEvent('download'), app.click('#bExport')]);
+  const bk2 = JSON.parse(fs.readFileSync(await dl2.path(), 'utf8'));
+  ok('14j バックアップに仕切りと並び順を含む', bk2.clips.some(c => c.kind === 'divider' && c.title === '構造の資料（2026）') && bk2.clips.every(c => typeof c.order === 'number'));
+  ok('14k バックアップに埋め込み画像を含む', bk2.clips.some(c => c.html.includes('data:image/gif')));
+  await app.click('#bClose');
+  await app.click('#list li:has-text("鉄筋の定着長さ")');
+  await app.waitForSelector('.rd .tagRow');
+  ok('14l 閲覧画面にタグ編集ボタン', (await app.textContent('.rd .tagRow')).includes('タグ編集'));
+
   await app.screenshot({ path: path.join(os.tmpdir(), 'webclip_pc.png') });
   ok('99 ページエラーなし', errors.length === 0, errors.join(' / '));
 
-  await browser.close(); s1.close(); s2.close();
+  await browser.close(); s1.close(); s2.close(); s3.close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

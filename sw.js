@@ -2,7 +2,7 @@
    - アプリ本体（同一オリジンの HTML）はネットワーク優先。オンラインなら常に最新版を表示し、オフライン時だけキャッシュを使う。
    - アイコン・マニフェストはキャッシュ優先。
    - 他サイト（記事の画像など）には関与しない。 */
-const CACHE = 'webclip-1.1.0';
+const CACHE = 'webclip-1.2.0';
 const ASSETS = ['./', './index.html', './WebClip.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 
